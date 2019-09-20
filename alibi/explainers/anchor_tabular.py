@@ -59,6 +59,8 @@ class AnchorTabular(object):
         self.min = {}  # type: Dict[int, float]
         self.max = {}  # type: Dict[int, float]
         self.std = {}  # type: Dict[int, float]
+
+        # TODO: This presumably can be tidied up a little - we don't need a for loop ?
         for f in range(self.train_data.shape[1]):
             if f in self.categorical_features and f not in self.ordinal_features:
                 continue
@@ -94,6 +96,7 @@ class AnchorTabular(object):
         d_train = self.d_train_data
 
         # sample from train and d_train data sets with replacement
+        # TODO: I don't like the idea of drawing the same sample multiple times as this is not informative?
         idx = np.random.choice(range(train.shape[0]), num_samples, replace=True)
         sample = train[idx]
         d_sample = d_train[idx]
@@ -198,15 +201,15 @@ class AnchorTabular(object):
                 idx = len(mapping)
                 mapping[idx] = (f, 'eq', X[f])  # store feature value
 
-        def sample_fn(present: list, num_samples: int, compute_labels: bool = True) \
+        def sample_fn(anchors: list, num_samples: int, compute_labels: bool = True) \
                 -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
             """
             Create sampling function from training data.
 
             Parameters
             ----------
-            present
-                List with keys from mapping
+            anchors
+                List with anchored features (keys in mapping)
             num_samples
                 Number of samples used when sampling from training set
             compute_labels
@@ -221,13 +224,15 @@ class AnchorTabular(object):
             labels
                 Create labels using model predictions if compute_labels equals True
             """
+
             # initialize dicts for 'eq', 'leq', 'geq' tuple value from previous mapping
             # key = feature column; value = feature or bin (for ordinal features) value
-            conditions_eq = {}  # type: Dict[int, float]
+            conditions_eq = {}   # type: Dict[int, float]
             conditions_leq = {}  # type: Dict[int, float]
             conditions_geq = {}  # type: Dict[int, float]
-            for x in present:
-                f, op, v = mapping[x]  # (feature, 'eq'/'leq'/'geq', feature value)
+
+            for anchor in anchors:
+                f, op, v = mapping[anchor]  # (feature, 'eq'/'leq'/'geq', feature value)
                 if op == 'eq':  # categorical feature
                     conditions_eq[f] = v
                 if op == 'leq':  # ordinal feature
@@ -297,6 +302,8 @@ class AnchorTabular(object):
         """
         # build sampling function and ...
         # ... mapping = (feature column, flag for categorical/ordinal feature, feature value or bin value)
+        # TODO: I would split the code out so that the mapping is built by one method and stored as a class property
+        # TODO: that the sampling function can then access this property
         sample_fn, mapping = self.get_sample_fn(X, desired_label=desired_label)
 
         # get anchors and add metadata
@@ -305,6 +312,9 @@ class AnchorTabular(object):
                                          max_anchor_size=max_anchor_size, **kwargs)  # type: Any
         self.add_names_to_exp(exp, mapping)
         exp['instance'] = X
+        # TODO: Also potentially duplicated, can be avoided +
+
+
         exp['prediction'] = self.predict_fn(X.reshape(1, -1))[0]
         exp = AnchorExplanation('tabular', exp)
 
@@ -386,3 +396,4 @@ class AnchorTabular(object):
                     fname = '%s > %s' % (self.feature_names[f], geq_val)
                 handled.add(f)
             hoeffding_exp['names'].append(fname)
+
