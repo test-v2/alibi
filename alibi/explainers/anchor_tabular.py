@@ -97,6 +97,10 @@ class AnchorTabular(object):
 
         # sample from train and d_train data sets with replacement
         # TODO: I don't like the idea of drawing the same sample multiple times as this is not informative?
+        # TODO: Currently, sampling is with replacement (???), which guarantees n samples are returned
+        # TODO: I think we shouldn't sample with replacement, in which case update_state method needs
+        # TODO: to be modified
+        # TODO: Samples should be returned in the same order ...
         idx = np.random.choice(range(train.shape[0]), num_samples, replace=True)
         sample = train[idx]
         d_sample = d_train[idx]
@@ -209,7 +213,8 @@ class AnchorTabular(object):
             Parameters
             ----------
             anchors
-                List with anchored features (keys in mapping)
+                List with sublists with anchored features (keys in mapping)
+
             num_samples
                 Number of samples used when sampling from training set
             compute_labels
@@ -231,6 +236,8 @@ class AnchorTabular(object):
             conditions_leq = {}  # type: Dict[int, float]
             conditions_geq = {}  # type: Dict[int, float]
 
+            # TODO: This is not correct anymore ... turn sample fcn into a wrapper and this into the sampler object
+            # TODO: Sample fcn should still work when called with and empty list and number of samples ...
             for anchor in anchors:
                 f, op, v = mapping[anchor]  # (feature, 'eq'/'leq'/'geq', feature value)
                 if op == 'eq':  # categorical feature
@@ -266,8 +273,11 @@ class AnchorTabular(object):
 
             # create labels using model predictions as true labels
             labels = np.array([])
+            # TODO: Think a bit whether it useful to do parallel calls or use asynchronous programming
             if compute_labels:
                 labels = (self.predict_fn(raw_data) == true_label).astype(int)
+
+            # TODO: Change return accordingly
             return raw_data, data, labels
 
         return sample_fn, mapping
@@ -306,15 +316,17 @@ class AnchorTabular(object):
         # TODO: that the sampling function can then access this property
         sample_fn, mapping = self.get_sample_fn(X, desired_label=desired_label)
 
+
+        # TODO: Create instance and then call the anchor_beam method?
         # get anchors and add metadata
         exp = AnchorBaseBeam.anchor_beam(sample_fn, delta=delta, epsilon=tau,
                                          batch_size=batch_size, desired_confidence=threshold,
                                          max_anchor_size=max_anchor_size, **kwargs)  # type: Any
+
+
         self.add_names_to_exp(exp, mapping)
         exp['instance'] = X
-        # TODO: Also potentially duplicated, can be avoided +
-
-
+        # TODO: Also potentially duplicated, can be avoided
         exp['prediction'] = self.predict_fn(X.reshape(1, -1))[0]
         exp = AnchorExplanation('tabular', exp)
 
