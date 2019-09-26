@@ -54,7 +54,7 @@ class AnchorBaseBeam(object):
         self.data_type = None  # data type for sampled data
 
     @staticmethod
-    def kl_bernoulli(p: np.array, q: np.array) -> np.array:
+    def kl_bernoulli(p: np.ndarray, q: np.ndarray) -> np.ndarray:
         """
         Compute KL-divergence between 2 probabilities p and q. len(p) divergences are calculated
         simultaneously.
@@ -77,7 +77,7 @@ class AnchorBaseBeam(object):
         return p * np.log(p / q) + (1. - p) * np.log((1. - p) / (1. - q))
 
     @staticmethod
-    def dup_bernoulli(p: np.array, level: np.array, n_iter: int = 17) -> np.array:
+    def dup_bernoulli(p: np.ndarray, level: np.ndarray, n_iter: int = 17) -> np.ndarray:
         """
         Update upper precision bound for a candidate anchors dependent on the KL-divergence.
 
@@ -109,7 +109,7 @@ class AnchorBaseBeam(object):
         return um
 
     @staticmethod
-    def dlow_bernoulli(p: np.array, level: np.array, n_iter: int = 17) -> np.array:
+    def dlow_bernoulli(p: np.ndarray, level: np.ndarray, n_iter: int = 17) -> np.ndarray:
         """
         Update lower precision bound for a candidate anchors dependent on the KL-divergence.
 
@@ -187,7 +187,7 @@ class AnchorBaseBeam(object):
         Indices of best anchor options. Number of indices equals min of beam width or nb of candidate anchors.
         """
 
-        def update_bounds(means: np.array, ub: np.array, lb: np.array, n_samples: np.array, delta: float,
+        def update_bounds(means: np.ndarray, ub: np.ndarray, lb: np.ndarray, n_samples: np.ndarray, delta: float,
                           t: int) -> NamedTuple:
             """
             Determines a set of two anchors by updating the upper bound for low emprical precision anchors and
@@ -212,8 +212,6 @@ class AnchorBaseBeam(object):
             -------
             Upper and lower precision bound indices.
             """
-
-            #TODO: make delta a kwarg ?
 
             critical_anchors = namedtuple('critical_anchors', 'ut lt')
 
@@ -249,25 +247,22 @@ class AnchorBaseBeam(object):
         ub = np.zeros(n_samples.shape)
         lb = np.zeros(n_samples.shape)
 
-        # TODO: Send all these calls at once ...
-        # TODO: Check why on earth we need a sampling function for each anchor... Can this be improved?
         # TODO: It is probably a good idea to sample a larger number of examples here? More accurate precision estimates
+        # TODO: Experiment with batching these calls/increasing number of samples after initial benchmark
         # should technically mean that the algo stops quicker? Discuss.*
         for f in np.where(n_samples == 0)[0]:
             n_samples[f] += 1  # set min samples for each anchor candidate to 1
-            positives[f] += sample_fcn[f](1)  # add labels.sum() for the anchor candidate
+            samples = sample_fcn([f], [1])  # add labels.sum() for the anchor candidate
+            positives[f] += samples[0][0]
 
-        # TODO: Discuss lines below with Janis/Arnaud - see notes on 23/09 (red)
-        # TODO: Fix this type isssue!
         if n_features == top_n:  # return all options b/c of beam search width
-            return range(n_features)
-
-        means = positives / n_samples  # fraction sample predictions equal to desired label
-        t = 1
+            return np.arange(n_features)
 
         # keep updating the upper and lower precision bounds until the difference between the best upper ...
         # ... precision bound of the low precision anchors and the worst lower precision bound of the high ...
         # ... precision anchors is smaller than eps
+        means = positives / n_samples  # fraction sample predictions equal to desired label
+        t = 1
         critical_a_idx = update_bounds(means, ub, lb, n_samples, delta, t)  # indices of critical arms returned
         B = ub[critical_a_idx.ut] - lb[critical_a_idx.lt]
         verbose_count = 0
@@ -282,13 +277,11 @@ class AnchorBaseBeam(object):
                       (ut, means[ut], n_samples[ut], ub[ut]), end=' ')
                 print('B = %.2f' % B)
 
-            # TODO: Discuss the issue of sampling with replacement  and update code accordingly?
             # TODO: turning num_samples to a list to be able to make further improvements, due to which one would sample
             #  different batch sizes for different anchors
             # TODO: If batch sizes become unequal, then it might be worth to reorder the request so that the smallest
             #  batch is done first and returned, and the programm execution can continue and do other stuff while the
             #  other batch is processed
-            # TODO: Samples list must have the same order as the anchors list
 
             # draw samples for each critical anchor, update anchors' mean, upper and lower bound precision estimate
             selected_anchors = [anchors[idx] for idx in critical_a_idx]
@@ -344,7 +337,7 @@ class AnchorBaseBeam(object):
         for f in all_features:
             for t in previous_best:
                 new_t = normalize_tuple(t + (f,))
-                if len(new_t) != len(t) + 1:
+                if len(new_t) != len(t) + 1:  # Avoid repeating the same feature ...
                     continue
                 if new_t not in new_tuples:
                     new_tuples.add(new_t)
@@ -472,7 +465,7 @@ class AnchorBaseBeam(object):
         return anchor
 
     @staticmethod
-    def to_sample(means: np.array, ubs: np.array, lbs: np.array, desired_confidence: float, epsilon_stop: float):
+    def to_sample(means: np.ndarray, ubs: np.ndarray, lbs: np.ndarray, desired_confidence: float, epsilon_stop: float):
         """
         Given an array of mean anchor precisions and their upper and lower bounds, determines for which anchors
         more samples need to be drawn in order to estimate the anchors precision with desired_confidence and error
@@ -532,7 +525,6 @@ class AnchorBaseBeam(object):
             Whether to print intermediate output every verbose_every steps
         stop_on_first
             Stop on first valid anchor found
-        # TODO: Maybe this is better expressed as the fraction of training set size with a min size?
         coverage_samples
             Number of samples used to compute coverage
         data_type
@@ -568,9 +560,6 @@ class AnchorBaseBeam(object):
 
         # while prec(A) > tau (precision constraint) for A=[] and prec_lb(A) < tau - eps ...
         # ... (lower precision bound below tau with margin eps), keep sampling data until lb is high enough
-        # TODO: Not sure if this is worth it, but you could batch this call with the one where we get the initial
-        # TODO: samples (also we might want to think about whether it's a good idea to draw 1 sample, inclined to think
-        #  not)
         while mean > desired_confidence and lb < desired_confidence - epsilon:
             nraw_data, ndata, nlabels = sample_fn([], batch_size)
             data = np.vstack((data, ndata))
@@ -710,3 +699,5 @@ class AnchorBaseBeam(object):
 
         # return explanation dictionary
         return AnchorBaseBeam.get_anchor_from_tuple(best_anchor, self.state)
+
+        # TODO: Discuss logging strategy
