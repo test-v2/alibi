@@ -32,7 +32,9 @@ class AnchorTabular(object):
         self.ordinal_features = [x for x in range(len(feature_names)) if x not in self.categorical_features]
 
         self.feature_names = feature_names
+        # TODO: If the values are mutable, then we need a deepcopy...
         self.categorical_names = categorical_names.copy()  # dict with {col: categorical feature options}
+        self.mapping = {}  # type: Dict[int,Tuple[int, str, float]]
 
     def fit(self, train_data: np.ndarray, disc_perc: list = [25, 50, 75]) -> None:
         """
@@ -96,11 +98,6 @@ class AnchorTabular(object):
         d_train = self.d_train_data
 
         # sample from train and d_train data sets with replacement
-        # TODO: I don't like the idea of drawing the same sample multiple times as this is not informative?
-        # TODO: Currently, sampling is with replacement (???), which guarantees n samples are returned
-        # TODO: I think we shouldn't sample with replacement, in which case update_state method needs
-        # TODO: to be modified
-        # TODO: Samples should be returned in the same order ...
         idx = np.random.choice(range(train.shape[0]), num_samples, replace=True)
         sample = train[idx]
         d_sample = d_train[idx]
@@ -118,7 +115,7 @@ class AnchorTabular(object):
 
             # add idx where feature value is in a higher bin than the observation
             if f in conditions_leq:
-                idx = (idx + (d_sample[:, f] > conditions_leq[f])).astype(bool)
+                idx = (idx + (d_sample[:, f] > conditions_leq[f])).astype(bool)  # TODO: why cast?
 
             if idx.sum() == 0:
                 continue  # if all values in sampled data have same bin as instance to be explained
@@ -141,9 +138,11 @@ class AnchorTabular(object):
             sample[idx, f] = to_rep
 
         # for the features in condition_leq: make sure sampled feature comes from correct ordinal bin
+        # TODO: Discuss: These are just the features in the first bin since otherwise they are dealt with in the
+        #  previous loop (they are both flagged as leq and geq if they are not in first/last bin)
         for f in conditions_leq:
 
-            if f in conditions_geq:
+            if f in conditions_geq:  # already sampled features from this bin in the previous loop
                 continue
 
             idx = d_sample[:, f] > conditions_leq[f]  # idx where feature value is in a higher bin than the observation
@@ -152,7 +151,7 @@ class AnchorTabular(object):
                 continue  # if all values in sampled data have same bin as instance to be explained
 
             # options: idx in train set where with feature value in same bin than instance to be explained
-            options = d_train[:, f] <= conditions_leq[f]
+            options = d_train[:, f] <= conditions_leq[f] # TODO: Easier to read if we just negate id.
 
             # if no options, uniformly sample between min and max of feature ...
             if options.sum() == 0:
@@ -164,6 +163,111 @@ class AnchorTabular(object):
             sample[idx, f] = to_rep
 
         return sample
+
+    def sample_fn(self, X: np.ndarray, fix_features_ids: list, num_samples: int, label: int = None,
+                  compute_labels: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Create sampling function from training data.
+
+        Parameters
+        ----------
+        X
+            Instance to be explained
+        fix_features_ids
+            List of features which are fixed during the sampling process
+        label
+
+        num_samples
+            Number of samples used when sampling from training set
+        compute_labels
+            Boolean whether to use labels coming from model predictions as 'true' labels
+
+        Returns
+        -------
+        raw_data
+            Sampled data from training set
+        data
+            Sampled data where ordinal features are binned (1 if in bin, 0 otherwise)
+        labels
+            Create labels using model predictions if compute_labels equals True
+        """
+
+        # initialize dicts for 'eq', 'leq', 'geq' tuple value from previous mapping
+        # key = feature column; value = feature or bin (for ordinal features) value
+        conditions_eq = {}  # type: Dict[int, float]
+        conditions_leq = {}  # type: Dict[int, float]
+        conditions_geq = {}  # type: Dict[int, float]
+
+        # TODO: This is not correct anymore ... turn sample fcn into a wrapper and this into the sampler object
+        # TODO: Sample fcn should still work when called with and empty list and number of samples ...
+        for anchor in fix_features_ids:
+            f, op, v = self.mapping[anchor]  # (feature, 'eq'/'leq'/'geq', feature value)
+            if op == 'eq':  # categorical feature
+                conditions_eq[f] = v
+            if op == 'leq':  # ordinal feature
+                if f not in conditions_leq:
+                    conditions_leq[f] = v
+                conditions_leq[f] = min(conditions_leq[f], v)  # store smallest bin > feature value
+            if op == 'geq':  # ordinal feature
+                if f not in conditions_geq:
+                    conditions_geq[f] = v
+                conditions_geq[f] = max(conditions_geq[f], v)  # store largest bin < feature value
+
+        # sample data from training set
+        # feature values are from same discretized bin or category as the explained instance ...
+        # ... if defined in conditions dicts
+        raw_data = self.sample_from_train(conditions_eq, {}, conditions_geq, conditions_leq, num_samples)
+
+        # discretize sampled data
+        d_raw_data = self.disc.discretize(raw_data)
+
+        # use the sampled, discretized raw data to construct a data matrix with the categorical ...
+        # ... and binned ordinal data (1 if in bin, 0 otherwise)
+        data = np.zeros((num_samples, len(self.mapping)), int)
+        for i in self.mapping:
+            f, op, v = self.mapping[i]
+            if op == 'eq':
+                data[:, i] = (d_raw_data[:, f] == X[f]).astype(int)
+            if op == 'leq':
+                data[:, i] = (d_raw_data[:, f] <= v).astype(int)
+            if op == 'geq':
+                data[:, i] = (d_raw_data[:, f] > v).astype(int)
+
+        # create labels using model predictions as true labels
+        labels = np.array([])
+        # TODO: Think a bit whether it useful to do parallel calls or use asynchronous programming
+        if compute_labels:
+            labels = (self.predict_fn(raw_data) == label).astype(int)
+
+        # TODO: Change return accordingly
+        return raw_data, data, labels
+
+    def create_mapping(self, X: np.ndarray) -> None:
+        """
+        Create a mapping between categorized data and the feature types and values. The keys of the mapping
+        are integers and the values are 3-tuples (feature column, flag for categorical/ordinal feature,
+        feature value or bin value).
+
+        Parameters
+        ----------
+        X
+            Instance to be explained
+        """
+
+        # discretize ordinal features of instance to be explained
+        X = self.disc.discretize(X.reshape(1, -1))[0]
+        for f in self.categorical_features:
+            if f in self.ordinal_features:
+                for v in range(len(self.categorical_names[f])):  # loop over nb of bins for the ordinal features
+                    idx = len(self.mapping)
+                    # TODO: Why is v != len(self.catergorical_names[f]) - 1 excluded. If I have 3 bins and my feat falls in the 3rd bin I can't explain using that?
+                    if X[f] <= v and v != len(self.categorical_names[f]) - 1:  # feature value <= bin value
+                        self.mapping[idx] = (f, 'leq', v)  # store bin value
+                    elif X[f] > v:  # feature value > bin value
+                        self.mapping[idx] = (f, 'geq', v)  # store bin value #TODO: 'geq' should be 'gt'
+            else:
+                idx = len(self.mapping)
+                self.mapping[idx] = (f, 'eq', X[f])  # store feature value
 
     def get_sample_fn(self, X: np.ndarray, desired_label: int = None) -> Tuple[Callable, dict]:
         """
@@ -204,81 +308,6 @@ class AnchorTabular(object):
             else:
                 idx = len(mapping)
                 mapping[idx] = (f, 'eq', X[f])  # store feature value
-
-        def sample_fn(anchors: list, num_samples: int, compute_labels: bool = True) \
-                -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-            """
-            Create sampling function from training data.
-
-            Parameters
-            ----------
-            anchors
-                List with sublists with anchored features (keys in mapping)
-
-            num_samples
-                Number of samples used when sampling from training set
-            compute_labels
-                Boolean whether to use labels coming from model predictions as 'true' labels
-
-            Returns
-            -------
-            raw_data
-                Sampled data from training set
-            data
-                Sampled data where ordinal features are binned (1 if in bin, 0 otherwise)
-            labels
-                Create labels using model predictions if compute_labels equals True
-            """
-
-            # initialize dicts for 'eq', 'leq', 'geq' tuple value from previous mapping
-            # key = feature column; value = feature or bin (for ordinal features) value
-            conditions_eq = {}   # type: Dict[int, float]
-            conditions_leq = {}  # type: Dict[int, float]
-            conditions_geq = {}  # type: Dict[int, float]
-
-            # TODO: This is not correct anymore ... turn sample fcn into a wrapper and this into the sampler object
-            # TODO: Sample fcn should still work when called with and empty list and number of samples ...
-            for anchor in anchors:
-                f, op, v = mapping[anchor]  # (feature, 'eq'/'leq'/'geq', feature value)
-                if op == 'eq':  # categorical feature
-                    conditions_eq[f] = v
-                if op == 'leq':  # ordinal feature
-                    if f not in conditions_leq:
-                        conditions_leq[f] = v
-                    conditions_leq[f] = min(conditions_leq[f], v)  # store smallest bin > feature value
-                if op == 'geq':  # ordinal feature
-                    if f not in conditions_geq:
-                        conditions_geq[f] = v
-                    conditions_geq[f] = max(conditions_geq[f], v)  # store largest bin < feature value
-
-            # sample data from training set
-            # feature values are from same discretized bin or category as the explained instance ...
-            # ... if defined in conditions dicts
-            raw_data = self.sample_from_train(conditions_eq, {}, conditions_geq, conditions_leq, num_samples)
-
-            # discretize sampled data
-            d_raw_data = self.disc.discretize(raw_data)
-
-            # use the sampled, discretized raw data to construct a data matrix with the categorical ...
-            # ... and binned ordinal data (1 if in bin, 0 otherwise)
-            data = np.zeros((num_samples, len(mapping)), int)
-            for i in mapping:
-                f, op, v = mapping[i]
-                if op == 'eq':
-                    data[:, i] = (d_raw_data[:, f] == X[f]).astype(int)
-                if op == 'leq':
-                    data[:, i] = (d_raw_data[:, f] <= v).astype(int)
-                if op == 'geq':
-                    data[:, i] = (d_raw_data[:, f] > v).astype(int)
-
-            # create labels using model predictions as true labels
-            labels = np.array([])
-            # TODO: Think a bit whether it useful to do parallel calls or use asynchronous programming
-            if compute_labels:
-                labels = (self.predict_fn(raw_data) == true_label).astype(int)
-
-            # TODO: Change return accordingly
-            return raw_data, data, labels
 
         return sample_fn, mapping
 
