@@ -2,7 +2,6 @@ from .anchor_base import AnchorBaseBeam
 from .anchor_explanation import AnchorExplanation
 from alibi.utils.discretizer import Discretizer
 from collections import OrderedDict
-import bisect
 import itertools
 import numpy as np
 import random
@@ -240,32 +239,8 @@ class AnchorTabular(object):
             return samples, self.disc.discretize(samples)
 
         ord_feat_ids_uniq = list(OrderedDict.fromkeys(ord_feat_ids))
-        # for each partial anchor count number of samples available and find their indices
-        partial_anchor_rows = [allowed_rows[ord_feat_ids_uniq[0]]]
-        n_partial_anchors = [len(partial_anchor_rows[-1])]
-        for feature in ord_feat_ids_uniq[1:]:
-            partial_anchor_rows.append(partial_anchor_rows[-1].intersection(allowed_rows[feature]))
-            n_partial_anchors.append(len(partial_anchor_rows[-1]))
-
-        n_partial_anchors = list(reversed(n_partial_anchors))
-        # search num_samples in the list containing the number of training records containing each sub-anchor
-        num_samples_pos = bisect.bisect_left(n_partial_anchors, num_samples)
-        if num_samples_pos == 0:  # training set has more than num_samples records containing the anchor
-            samples_idxs = random.sample(partial_anchor_rows[-1], num_samples)
-            samples[:, ord_feat_ids_uniq] = train[np.ix_(samples_idxs, ord_feat_ids_uniq)]
-            d_samples[:, ord_feat_ids_uniq] = d_train[np.ix_(samples_idxs, ord_feat_ids_uniq)]
-            return samples, d_samples
-
-        # find maximal length sub-anchor that allows one to draw num_samples
-        sub_anchor_max_len_pos = len(n_partial_anchors) - num_samples_pos
-        if sub_anchor_max_len_pos > 0:
-            sample_idxs = random.sample(set.intersection(*partial_anchor_rows[:sub_anchor_max_len_pos]), num_samples)
-            anchored_feats = ord_feat_ids_uniq[:sub_anchor_max_len_pos]
-            samples[:, anchored_feats] = train[np.ix_(sample_idxs, anchored_feats)]
-        # the remainder variables get replaced with random draws from the feature distributions
-        feats_to_replace = ord_feat_ids_uniq[sub_anchor_max_len_pos:]
-        to_replace = [random.choices(list(allowed_rows[feature]), k=num_samples) for feature in feats_to_replace]
-        samples[:, feats_to_replace] = np.array(to_replace).transpose()
+        to_replace = [random.choices(list(allowed_rows[feature]), k=num_samples) for feature in ord_feat_ids_uniq]
+        samples[:, ord_feat_ids_uniq] = np.array(to_replace).transpose()
 
         # TODO: Review this and ensure it is correct. Ensure discretisation works as intended
         # TODO: Understand what is serialised during parallelisation and see if using self.disc.discretize increases
