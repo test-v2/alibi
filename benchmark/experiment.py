@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 from operator import methodcaller
 from timeit import default_timer as timer
+from typing import Any, Sequence
 
 from alibi.explainers import AnchorTabular
 import alibi.datasets as datasets
@@ -21,6 +22,8 @@ import alibi.datasets as datasets
 SUPPORTED_EXPLAINERS = ['tabular']
 SUPPORTED_DATASETS = ['adult', 'imagenet', 'movie_sentiment']
 SUPPORTED_CLASSIFIERS = ['rf']
+
+# TODO: Typing and documentation
 
 
 class Timer:
@@ -151,16 +154,17 @@ class ExplainerExperiment(object):
         self.clf_config = classifier
 
         self._this_module = sys.modules[__name__]
-        # TODO: Implement _create_data_store
-        self._data_store = {'feat_ids': [],
-                            'feat_names': [],
-                            'precision': [],
-                            'coverage': [],
-                            't_elapsed': [],
-                            'clf_config': {},
-                            'exp_config': {},
-                            'expln_config': {},
-                            }
+        self._default_data_store = {'t_elapsed': [],
+                                    'clf_config': {},
+                                    'exp_config': {},
+                                    'expln_config': {},
+                                    }
+        self._data_fields = self.experiment_config['save']['fields']
+        self._data_mapping = self.experiment_config['save']['mapping']
+        # self._data_store contains the fields specified in experiment settings
+        # in addition to the _default_data_store fields
+        self._create_data_store()
+
         self.explainer = None
         self.splits = None
 
@@ -205,19 +209,28 @@ class ExplainerExperiment(object):
         with open(fullpath, 'wb') as f:
             pickle.dump(self._data_store, f)
 
+    def _read_recursive(self, data: dict, fields: Sequence) -> Any:
+        if len(fields) == 1:
+            return data[fields[0]]
+        return self._read_recursive(data[fields[0]], fields[1:])
+
+    def _create_data_store(self):
+        self._data_store = {field: [] for field in self._data_fields}
+        self._data_store.update(self._default_data_store)
+
     def _save_exp_metadata(self):
         self._data_store['clf_config'] = self.clf_config
         self._data_store['expln_config'] = self.explainer_config
         self._data_store['exp_config'] = self.experiment_config
 
-    def _create_data_store(self):
-        pass
-
     def update(self, explanation, t_elapsed):
-        self._data_store['feat_ids'].append(explanation['raw']['feature'])
-        self._data_store['feat_names'].append(explanation['raw']['names'])
-        self._data_store['precision'].append(explanation['precision'])
-        self._data_store['coverage'].append(explanation['coverage'])
+        for field in self._data_fields:
+            if field in self._data_mapping:
+                data = self._read_recursive(explanation,
+                                            self._data_mapping[field])
+                self._data_store[field].append(data)
+            else:
+                self._data_store[field].append(explanation[field])
         self._data_store['t_elapsed'].append(t_elapsed)
 
 
