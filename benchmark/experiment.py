@@ -44,15 +44,16 @@ def load_dataset(*, dataset='adult'):
     return dataset
 
 
-def split_data(dataset, seed=0, idx=30000):
+def split_data(dataset, opts):
 
     data, target = dataset.data, dataset.target
-    np.random.seed(seed)
+    np.random.seed(opts['seed'])
 
     data_perm = np.random.permutation(np.c_[data, target])
     data = data_perm[:, :-1]
     target = data_perm[:, -1]
 
+    idx = opts['max_records']
     X_train, Y_train = data[:idx, :], target[:idx]
     X_test, Y_test = data[idx + 1:, :], target[idx + 1:]
 
@@ -165,18 +166,24 @@ class ExplainerExperiment(object):
 
     def __enter__(self):
 
+        # load and split dataset
         dataset = load_dataset(dataset=self.dataset)
-        splits = split_data(dataset)
+        splits = split_data(dataset, self.experiment_config['data']['split_opts'])
         self.splits = splits
 
+        # optionally preprocess the dataset
         if self.experiment_config['data']['preprocess']:
             preprocess_fcn = 'preprocess_{}'.format(self.dataset)
             preprocessor = getattr(self._this_module, preprocess_fcn)(dataset, splits)
         else:
             preprocessor = None
+
+        # fit classifier
         clf_fcn = 'fit_{}'.format(self.clf_config['name'])
         predict_fn = getattr(self._this_module, clf_fcn)(splits, self.clf_config, preprocessor=preprocessor)
         explainer_fcn = 'get_{}_explainer'.format(self.explainer_config['type'])
+
+        # create and fit explainer instance
         explainer = getattr(self._this_module, explainer_fcn)(predict_fn, dataset, splits, self.explainer_config)
         self.explainer = explainer
 
