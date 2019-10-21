@@ -1,0 +1,29 @@
+dataset: adult
+
+# Example of configuring a random forest classifier
+classifier:
+  name: rf
+  n_estimators: 50
+  seed: 0
+
+# Example of configuring a AnchorTabular explainer
+explainer:
+  type: tabular
+  threshold: 0.95
+  disc_perc: !!python/tuple [25, 50, 75]
+  parallel: false
+  verbose: false
+  seed: 0
+
+# Experiment settings
+experiment:
+  n_runs: 100
+  instance_idx: 6
+  ckpt_dir: /home/alex/git/work_experiments/VectorisedBenchmark
+  ckpt: Example2TestExperimentScript.pkl
+  verbose: false
+  data:
+    preprocess: true
+    split_options:
+      seed: 0
+      max_records: 30000
