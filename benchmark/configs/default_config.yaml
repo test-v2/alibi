@@ -20,10 +20,10 @@ experiment:
   n_runs: 100
   instance_idx: 6
   ckpt_dir: /home/alex/git/work_experiments/VectorisedBenchmark
-  ckpt: Example2TestExperimentScript.pkl
+  ckpt: Example2TestExperimentScriptAfterDataOpts.pkl
   verbose: false
   data:
     preprocess: true
-    split_options:
+    split_opts:
       seed: 0
       max_records: 30000
