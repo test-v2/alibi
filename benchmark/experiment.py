@@ -169,10 +169,13 @@ class ExplainerExperiment(object):
         splits = split_data(dataset)
         self.splits = splits
 
-        preprocess_fcn = 'preprocess_{}'.format(self.dataset)
-        preprocessor = getattr(self._this_module, preprocess_fcn)(dataset, splits)
+        if self.experiment_config['data']['preprocess']:
+            preprocess_fcn = 'preprocess_{}'.format(self.dataset)
+            preprocessor = getattr(self._this_module, preprocess_fcn)(dataset, splits)
+        else:
+            preprocessor = None
         clf_fcn = 'fit_{}'.format(self.clf_config['name'])
-        predict_fn = getattr(self._this_module, clf_fcn)(splits, self.clf_config, preprocessor)
+        predict_fn = getattr(self._this_module, clf_fcn)(splits, self.clf_config, preprocessor=preprocessor)
         explainer_fcn = 'get_{}_explainer'.format(self.explainer_config['type'])
         explainer = getattr(self._this_module, explainer_fcn)(predict_fn, dataset, splits, self.explainer_config)
         self.explainer = explainer
