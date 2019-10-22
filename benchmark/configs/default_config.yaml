@@ -20,7 +20,7 @@ experiment:
   n_runs: 100
   instance_idx: 6
   ckpt_dir: /home/alex/git/work_experiments/PerformanceTest
-  ckpt: master_original.pkl
+  ckpt: master_init_samples_128.pkl
   verbose: false
   data:
     preprocess: true
