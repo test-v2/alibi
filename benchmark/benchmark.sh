@@ -15,6 +15,11 @@ for ARGUMENT in "$@"
       esac
 done
 
+echo "VERSION_1: $VERSION_1"
+echo "EXPERIMENT_1: $EXPERIMENT_1"
+echo "VERSION_2: $VERSION_2"
+echo "EXPERIMENT_2: $EXPERIMENT_2"
+
 checkout_error()
 {
   BRANCH=$1
