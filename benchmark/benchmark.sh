@@ -39,14 +39,14 @@ experiment_error()
 
 echo "Checking out ${VERSION_1}..."
 git checkout "$VERSION_1" || { checkout_error "$VERSION_1"; exit 1;}
-
+HASH="$(git rev-parse HEAD)"
 echo "Runnig expermient with configuration ${EXPERIMENT_1} on this branch ..."
-python benchmark/experiment.py --config "benchmark/configs/$EXPERIMENT_1" ||
+python benchmark/experiment.py --config "benchmark/configs/$EXPERIMENT_1" --hash "$HASH" ||
  { experiment_error "$VERSION_1" "$EXPERIMENT_1"; exit 1;}
 
 echo "Checking out ${VERSION_2}..."
 git checkout "$VERSION_2" || { checkout_error "$VERSION_2"; exit 1;}
-
-python benchmark/experiment.py --config "benchmark/configs/$EXPERIMENT_2" ||
+HASH="$(git rev-parse HEAD)"
+python benchmark/experiment.py --config "benchmark/configs/$EXPERIMENT_2" --hash "$HASH" ||
  { experiment_error "$VERSION_2" "$EXPERIMENT_2"; exit 1;}
 echo "Benchmarking complete!"
