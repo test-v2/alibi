@@ -19,8 +19,8 @@ explainer:
 experiment:
   n_runs: 100
   instance_idx: 6
-  ckpt_dir: /home/alex/git/work_experiments/VectorisedBenchmark
-  ckpt: Example2TestExperimentScriptAbstractDataStore.pkl
+  ckpt_dir: /home/alex/git/work_experiments/BenchmarkTest
+  ckpt: BenchmarkTestExample2.pkl
   verbose: false
   data:
     preprocess: true
