@@ -1,9 +1,19 @@
 #!/bin/bash -e
 
-BRANCH_1=$1
-EXPERIMENT_1=$2
-BRANCH_2=$3
-EXPERIMENT_2=$4
+# Parse arguments
+for ARGUMENT in "$@"
+  do
+    KEY=$(echo "$ARGUMENT" | cut -f1 -d=)
+    VALUE=$(echo "$ARGUMENT" | cut -f2 -d=)
+
+      case "$KEY" in
+              VERSION_1)      VERSION_1=${VALUE} ;;
+              VERSION_2)      VERSION_2=${VALUE} ;;
+              EXPERIMENT_1)   EXPERIMENT_1=${VALUE} ;;
+              EXPERIMENT_2)   EXPERIMENT_2=${VALUE} ;;
+              *)
+      esac
+done
 
 checkout_error()
 {
@@ -22,16 +32,16 @@ experiment_error()
   echo "Exiting ..."
 } >&2
 
-echo "Checking out ${BRANCH_1}..."
-git checkout "$BRANCH_1" || { checkout_error "$BRANCH_1"; exit 1;}
+echo "Checking out ${VERSION_1}..."
+git checkout "$VERSION_1" || { checkout_error "$VERSION_1"; exit 1;}
 
 echo "Runnig expermient with configuration ${EXPERIMENT_1} on this branch ..."
 python benchmark/experiment.py --config "benchmark/configs/$EXPERIMENT_1" ||
- { experiment_error "$BRANCH_1" "$EXPERIMENT_1"; exit 1;}
+ { experiment_error "$VERSION_1" "$EXPERIMENT_1"; exit 1;}
 
-echo "Checking out ${BRANCH_2}..."
-git checkout "$BRANCH_2" || { checkout_error "$BRANCH_2"; exit 1;}
+echo "Checking out ${VERSION_2}..."
+git checkout "$VERSION_2" || { checkout_error "$VERSION_2"; exit 1;}
 
 python benchmark/experiment.py --config "benchmark/configs/$EXPERIMENT_2" ||
- { experiment_error "$BRANCH_2" "$EXPERIMENT_2"; exit 1;}
+ { experiment_error "$VERSION_2" "$EXPERIMENT_2"; exit 1;}
 echo "Benchmarking complete!"
