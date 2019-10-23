@@ -43,4 +43,4 @@ experiment:
       feat_names: [raw, names]
   profile: true
   profile_dir: /home/alex/git/work_experiments/ProfileData
-  profile_out: master_init_samp_512.cprof
+  profile_out: master_init_samp_1024.cprof
