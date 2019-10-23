@@ -20,7 +20,7 @@ experiment:
   n_runs: 100
   instance_idx: 6
   ckpt_dir: /home/alex/git/work_experiments/PerformanceTest
-  ckpt: master_original.pkl
+  ckpt: master_init_512_samples.pkl
   verbose: false
   data:
     preprocess: true
@@ -43,4 +43,4 @@ experiment:
       feat_names: [raw, names]
   profile: false
   profile_dir: /home/alex/git/work_experiments/ProfileData
-  profile_out: master_init_samp_2048.cprof
+  profile_out: master_init_samp_512.cprof
