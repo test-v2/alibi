@@ -423,7 +423,7 @@ class AnchorBaseBeam(object):
     @staticmethod
     def anchor_beam(sample_fn: Callable, delta: float = 0.05, epsilon: float = 0.1, batch_size: int = 10,
                     desired_confidence: float = 1, beam_size: int = 1, verbose: bool = False,
-                    epsilon_stop: float = 0.05, min_samples_start: int = 256, max_anchor_size: int = None,
+                    epsilon_stop: float = 0.05, min_samples_start: int = 128, max_anchor_size: int = None,
                     verbose_every: int = 1, stop_on_first: bool = False, coverage_samples: int = 10000,
                     data_type: str = None, **kwargs) -> dict:
         """
