@@ -14,6 +14,10 @@ for ARGUMENT in "$@"; do
   esac
 done
 
+# Set experiment to default value if not passed
+if [ -z ${EXPERIMENT_1+x} ]; then EXPERIMENT_1="default_config.yaml"; fi
+if [ -z ${EXPERIMENT_2+x} ]; then EXPERIMENT_2="default_config.yaml"; fi
+
 echo "VERSION_1: $VERSION_1"
 echo "EXPERIMENT_1: $EXPERIMENT_1"
 echo "VERSION_2: $VERSION_2"
