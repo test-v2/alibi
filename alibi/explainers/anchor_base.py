@@ -170,8 +170,8 @@ class AnchorBaseBeam(object):
         ub = np.zeros(n_samples.shape)
         lb = np.zeros(n_samples.shape)
         for f in np.where(n_samples == 0)[0]:
-            n_samples[f] += 20  # set min samples for each anchor candidate to 1
-            positives[f] += sample_fns[f](20)  # add labels.sum() for the anchor candidate
+            n_samples[f] += 10  # set min samples for each anchor candidate to 1
+            positives[f] += sample_fns[f](10)  # add labels.sum() for the anchor candidate
 
         if n_features == top_n:  # return all options b/c of beam search width
             return range(n_features)
