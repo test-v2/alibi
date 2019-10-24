@@ -137,6 +137,7 @@ def get_explanation(explainer, expln_config, splits, exp_config):
                              threshold=expln_config['threshold'],
                              verbose=expln_config['verbose'],
                              parallel=expln_config['parallel'],
+                             decay_const=expln_config['decay_const'],
                              )
 
 
@@ -204,9 +205,9 @@ class ExplainerExperiment(object):
         else:
             print("WARNING: Checkpoint directory already exists, "  # TODO: Setup logging 
                   "files may be overwritten!")
-
+        exp_name = self.experiment_config['ckpt'] + '_const_{}'.format(self.explainer_config['decay_const'])
         fullpath = os.path.join(self.experiment_config['ckpt_dir'],
-                                self.experiment_config['ckpt'])
+                                exp_name)
         fullpath = fullpath if fullpath.split(".")[-1] == 'pkl' else fullpath + '.pkl'
 
         with open(fullpath, 'wb') as f:

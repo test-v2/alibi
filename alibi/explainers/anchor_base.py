@@ -570,7 +570,7 @@ class AnchorBaseBeam(object):
             for i, t in zip(chosen_tuples, best_of_size[current_size]):
 
                 # choose at most (beam_size - 1) tuples at each step with at most n_feature steps
-                beta = np.log(1. / (delta / (1 + (beam_size - 1) * n_features)))
+                beta = np.log(1. / (delta / (1 + kwargs['decay_const'])))
 
                 # get precision, lower and upper bounds, and coverage for candidate anchor
                 mean = state['t_positives'][t] / state['t_nsamples'][t]

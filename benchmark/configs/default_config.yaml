@@ -14,13 +14,14 @@ explainer:
   parallel: false
   verbose: false
   seed: 0
+  decay_const: 0
 
 # Experiment settings
 experiment:
   n_runs: 100
   instance_idx: 0
   ckpt_dir: /home/alex/git/work_experiments/PerformanceTest
-  ckpt: master_beam_5_idx_0.pkl
+  ckpt: master_beam_5_idx_0
   verbose: false
   data:
     preprocess: true
@@ -29,7 +30,7 @@ experiment:
       max_records: 30000
   save:
     # elapsed time included by default
-    fields: [feat_ids, feat_names, precision, coverage]
+    fields: [feat_ids, feat_names, precision, coverage, raw_precision, raw_coverage]
     # By default, it is assumed that the experiment object has
     # amongst its keys the values specified in fields. If this is
     # not the case, then mapping[fields[idx]] contains a list with
@@ -41,6 +42,8 @@ experiment:
     mapping:
       feat_ids : [raw, feature]
       feat_names: [raw, names]
+      raw_precision: [raw, precision]
+      raw_coverage: [raw, coverage]
   profile: false
   profile_dir: /home/alex/git/work_experiments/ProfileData
   profile_out: master_beam_5_idx_0.cprof
