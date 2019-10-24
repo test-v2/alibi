@@ -14,14 +14,14 @@ explainer:
   parallel: false
   verbose: false
   seed: 0
-  decay_const: 80
+  decay_const: 0
 
 # Experiment settings
 experiment:
   n_runs: 50
   instance_idx: 0
   ckpt_dir: /home/alex/git/work_experiments/PerformanceTest
-  ckpt: master_beam_5_idx_0
+  ckpt: master_beam_1_idx_0
   verbose: false
   data:
     preprocess: true
