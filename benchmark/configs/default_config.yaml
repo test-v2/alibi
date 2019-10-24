@@ -14,7 +14,7 @@ explainer:
   parallel: false
   verbose: false
   seed: 0
-  decay_const: 10
+  decay_const: 30
 
 # Experiment settings
 experiment:
