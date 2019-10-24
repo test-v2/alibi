@@ -18,7 +18,7 @@ explainer:
 
 # Experiment settings
 experiment:
-  n_runs: 100
+  n_runs: 50
   instance_idx: 0
   ckpt_dir: /home/alex/git/work_experiments/PerformanceTest
   ckpt: master_beam_5_idx_0
