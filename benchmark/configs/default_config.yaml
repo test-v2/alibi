@@ -18,9 +18,9 @@ explainer:
 # Experiment settings
 experiment:
   n_runs: 100
-  instance_idx: 0
+  instance_idx: 6
   ckpt_dir: /home/alex/git/work_experiments/PerformanceTest
-  ckpt: master_original_idx_0.pkl
+  ckpt: master_min_samples_5_idx_6.pkl
   verbose: false
   data:
     preprocess: true
@@ -41,6 +41,6 @@ experiment:
     mapping:
       feat_ids : [raw, feature]
       feat_names: [raw, names]
-  profile: false
+  profile: true
   profile_dir: /home/alex/git/work_experiments/ProfileData
-  profile_out: master_orig.cprof
+  profile_out: master_min_samples_5_idx_6.cprof
