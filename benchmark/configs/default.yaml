@@ -20,7 +20,7 @@ experiment:
   n_runs: 100
   instance_idx: 6
   ckpt_dir: /home/alex/git/work_experiments/ChoicesRegressionTest
-  ckpt: RandomChoicesExample2_2.pkl
+  ckpt: RandomChoicesExample2_3.pkl
   verbose: false
   data:
     preprocess: true
