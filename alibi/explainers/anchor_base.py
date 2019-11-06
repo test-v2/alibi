@@ -329,12 +329,13 @@ class AnchorBaseBeam(object):
             -------
             Sum of where sampled data equals desired label of observation to be explained.
             """
-            raw_data, data, labels = sample_fn(list(state['t_order'][t]), n)
+            raw_data, data, labels, coverage = sample_fn(list(state['t_order'][t]), n)
             current_idx = state['current_idx']
             idxs = range(current_idx, current_idx + n)
             state['t_idx'][t].update(idxs)
             state['t_nsamples'][t] += n
             state['t_positives'][t] += labels.sum()
+            state['t_coverage'][t] = coverage
             state['data'][idxs] = data
             state['raw_data'][idxs] = raw_data
             state['labels'][idxs] = labels
@@ -467,10 +468,10 @@ class AnchorBaseBeam(object):
                   'coverage': [], 'examples': [], 'all_precision': 0}
 
         # random (b/c first argument is empty) sample nb of coverage_samples from training data
-        _, coverage_data, _ = sample_fn([], coverage_samples, compute_labels=False)
+        _, coverage_data, _, _ = sample_fn([], coverage_samples, compute_labels=False)
 
         # sample by default 1 or min_samples_start more random value(s)
-        raw_data, data, labels = sample_fn([], max(1, min_samples_start))
+        raw_data, data, labels, _ = sample_fn([], max(1, min_samples_start))
 
         # mean = fraction of labels sampled data that equals the label of the instance to be explained ...
         # ... and is equivalent to prec(A) in paper (eq.2)
@@ -482,7 +483,7 @@ class AnchorBaseBeam(object):
         # while prec(A) > tau (precision constraint) for A=[] and prec_lb(A) < tau - eps ...
         # ... (lower precision bound below tau with margin eps), keep sampling data until lb is high enough
         while mean > desired_confidence and lb < desired_confidence - epsilon:
-            nraw_data, ndata, nlabels = sample_fn([], batch_size)
+            nraw_data, ndata, nlabels, _ = sample_fn([], batch_size)
             data = np.vstack((data, ndata))
             raw_data = np.vstack((raw_data, nraw_data))
             labels = np.hstack((labels, nlabels))
@@ -576,7 +577,7 @@ class AnchorBaseBeam(object):
                 mean = state['t_positives'][t] / state['t_nsamples'][t]
                 lb = AnchorBaseBeam.dlow_bernoulli(mean, beta / state['t_nsamples'][t])
                 ub = AnchorBaseBeam.dup_bernoulli(mean, beta / state['t_nsamples'][t])
-                coverage = state['t_coverage'][t]
+                coverage = state['t_coverage'][t]  # exact coverage returned by sampling function
 
                 if verbose:
                     print(i, mean, lb, ub)

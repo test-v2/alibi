@@ -69,6 +69,7 @@ class AnchorTabular(object):
             List with percentiles (int) used for discretization
         """
         self.train_data = train_data
+        self.n_records = train_data.shape[0]
 
         # discretization of ordinal features
         self.disc = Discretizer(self.train_data, self.numerical_features, self.feature_names, percentiles=disc_perc)
@@ -157,7 +158,7 @@ class AnchorTabular(object):
                 cat_enc_idx += 1
 
     def sample_from_train(self, anchor: list, val2idx: dict, ord_lookup: dict, cat_lookup: dict,
-                          enc2feat_idx: dict, num_samples: int) -> Tuple[np.ndarray, np.ndarray]:
+                          enc2feat_idx: dict, num_samples: int) -> Tuple[np.ndarray, np.ndarray, float]:
         """
         Sample data from training set but keep features in the anchor list the same
         as the feature value or bin (for ordinal features) as the instance to be explained.
@@ -181,7 +182,8 @@ class AnchorTabular(object):
             Mapping between encoded feature IDs and feature IDs in the dataset
         num_samples
             Number of samples used when sampling from training set
-
+        coverage
+            the coverage of the anchor in the training data
         Returns
         -------
 
@@ -199,7 +201,7 @@ class AnchorTabular(object):
         samples = train[init_sample_idx]
         d_samples = d_train[init_sample_idx]
         if not anchor:
-            return samples, d_samples
+            return samples, d_samples, -1.0
 
         # bins one can sample from for each numerical feature (key: feat id)
         allowed_bins = {}  # type: Dict[int, Set[int]]
@@ -240,13 +242,14 @@ class AnchorTabular(object):
         partial_anchor_rows = list(accumulate([allowed_rows[feat] for feat in uniq_feat_ids],
                                               np.intersect1d))
         n_partial_anchors = np.array([len(n_records) for n_records in reversed(partial_anchor_rows)])
+        coverage = n_partial_anchors[-1]/self.n_records
         # search num_samples in the list containing the number of training records containing each sub-anchor
         num_samples_pos = np.searchsorted(n_partial_anchors, num_samples)
         if num_samples_pos == 0:  # training set has more than num_samples records containing the anchor
             samples_idxs = np.random.choice(partial_anchor_rows[-1], num_samples)
             samples[:, uniq_feat_ids] = train[np.ix_(samples_idxs, uniq_feat_ids)]
             d_samples[:, uniq_feat_ids] = d_train[np.ix_(samples_idxs, uniq_feat_ids)]
-            return samples, d_samples
+            return samples, d_samples, coverage
 
         # search partial anchors in the training set and replace the remainder of the features
         start, n_anchor_feats = 0, len(partial_anchor_rows)
@@ -288,10 +291,10 @@ class AnchorTabular(object):
                                                          high=max_vals,
                                                          size=(num_samples,))
 
-        return samples, self.disc.discretize(samples)
+        return samples, self.disc.discretize(samples), coverage
 
     def sampler(self, anchor: list, num_samples: int, compute_labels: bool = True) \
-            -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
         """
         Create sampling function from training data.
 
@@ -314,8 +317,8 @@ class AnchorTabular(object):
             Create labels using model predictions if compute_labels equals True
         """
 
-        raw_data, d_raw_data = self.sample_from_train(anchor, self.val2idx, self.ord_lookup, self.cat_lookup,
-                                                      self.enc2feat_idx, num_samples)
+        raw_data, d_raw_data, coverage = self.sample_from_train(anchor, self.val2idx, self.ord_lookup, self.cat_lookup,
+                                                                self.enc2feat_idx, num_samples)
 
         # use the sampled, discretized raw data to construct a data matrix with the categorical ...
         # ... and binned ordinal data (1 if in bin, 0 otherwise)
@@ -335,7 +338,7 @@ class AnchorTabular(object):
         if compute_labels:
             labels = (self.predict_fn(raw_data) == self.instance_label).astype(int)
 
-        return raw_data, data, labels
+        return raw_data, data, labels, coverage
 
     def explain(self, X: np.ndarray, threshold: float = 0.95, delta: float = 0.1,
                 tau: float = 0.15, batch_size: int = 100, max_anchor_size: int = None,
