@@ -48,7 +48,7 @@ def test_iris(predict_type, threshold):
     explainer.build_sampling_lookups(X_test[0, :])
     anchor = list(explainer.enc2feat_idx.keys())
     nb_samples = 5
-    raw_data, data, labels = explainer.sampler(anchor, nb_samples)
+    raw_data, data, labels, _ = explainer.sampler(anchor, nb_samples)
     assert len(explainer.enc2feat_idx) == data.shape[1]
 
     # test mapping dictionary used for sampling
