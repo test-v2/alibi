@@ -1,6 +1,7 @@
 from .anchor_base import AnchorBaseBeam
 from .anchor_explanation import AnchorExplanation
 from alibi.utils.discretizer import Discretizer
+from alibi.utils.data import ArgmaxTransformer
 from collections import OrderedDict, defaultdict
 import bisect
 import itertools
@@ -11,14 +12,14 @@ from typing import Callable, Tuple, Any, Set
 
 class AnchorTabular(object):
 
-    def __init__(self, predict_fn: Callable, feature_names: list, categorical_names: dict = None,
+    def __init__(self, predictor: Callable, feature_names: list, categorical_names: dict = None,
                  seed: int = None) -> None:
         """
         Initialize the anchor tabular explainer.
 
         Parameters
         ----------
-        predict_fn
+        predictor
             Model prediction function
         feature_names
             List with feature names
@@ -31,12 +32,13 @@ class AnchorTabular(object):
         random.seed(seed)
         np.random.seed(seed)
 
-        # check if predict_fn returns predicted class or prediction probabilities for each class
-        # if needed adjust predict_fn so it returns the predicted class
-        if np.argmax(predict_fn(np.zeros([1, len(feature_names)])).shape) == 0:
-            self.predict_fn = predict_fn
+        # check if predictor returns predicted class or prediction probabilities for each class
+        # if needed adjust predictor so it returns the predicted class
+        if np.argmax(predictor(np.zeros([1, len(feature_names)])).shape) == 0:
+            self.predictor = predictor
         else:
-            self.predict_fn = lambda x: np.argmax(predict_fn(x), axis=1)
+            transformer = ArgmaxTransformer(predictor)
+            self.predictor = transformer
 
         # define column indices of categorical and numerical (aka continuous) features
         if categorical_names:
@@ -336,7 +338,7 @@ class AnchorTabular(object):
         # create labels using model predictions as true labels
         labels = np.array([])
         if compute_labels:
-            labels = (self.predict_fn(raw_data) == self.instance_label).astype(int)
+            labels = (self.predictor(raw_data) == self.instance_label).astype(int)
 
         return raw_data, data, labels
 
@@ -372,7 +374,7 @@ class AnchorTabular(object):
         # if no true label available; true label = predicted label
         true_label = desired_label
         if true_label is None:
-            self.instance_label = self.predict_fn(X.reshape(1, -1))[0]
+            self.instance_label = self.predictor(X.reshape(1, -1))[0]
 
         # build feature encoding and mappings from the instance values to database rows where similar records are found
         self.build_sampling_lookups(X)
@@ -387,7 +389,7 @@ class AnchorTabular(object):
         if true_label is None:
             anchor['prediction'] = self.instance_label
         else:
-            anchor['prediction'] = self.predict_fn(X.reshape(1, -1))[0]
+            anchor['prediction'] = self.predictor(X.reshape(1, -1))[0]
         anchor['instance'] = X
         exp = AnchorExplanation('tabular', anchor)
 
