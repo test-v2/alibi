@@ -18,7 +18,7 @@ class TabularSampler(object):
     """ A sampler that uses an underlying training set to draw records that have a subset of features with
     values specified in an instance to be expalined, X. """
     def __init__(self, predictor: Callable, disc_perc: Tuple[Union[int, float]], numerical_features: List[int],
-                 categorical_features: List[int], feature_names: list, feature_values: dict) -> None:
+                 categorical_features: List[int], feature_names: list, feature_values: dict, seed: int = None) -> None:
         """
         Parameters
         ----------
@@ -34,7 +34,11 @@ class TabularSampler(object):
             feature names
         feature_values
             key: categorical feature column ID, value: values for the feature
+        seed
+            if set, fixes random sequence generation
         """
+
+        np.random.seed(seed)
 
         self.instance_label = None
         self.predictor = predictor
@@ -452,8 +456,6 @@ class AnchorTabular(object):
 
         """
 
-        np.random.seed(seed)
-
         # check if predictor returns predicted class or prediction probabilities for each class
         # if needed adjust predictor so it returns the predicted class
         if np.argmax(predictor(np.zeros([1, len(feature_names)])).shape) == 0:
@@ -477,6 +479,7 @@ class AnchorTabular(object):
             self.feature_values = {}
 
         self.samplers = []
+        self.seed = seed
 
     def fit(self, train_data: np.ndarray, disc_perc: tuple = (25, 50, 75), **kwargs) -> None:
         """
@@ -503,6 +506,7 @@ class AnchorTabular(object):
                                  self.categorical_features,
                                  self.feature_names,
                                  self.feature_values,
+                                 self.seed,
                                  )
         self.samplers = [sampler.deferred_init(train_data, d_train_data)]
 
@@ -702,21 +706,24 @@ class DistributedAnchorTabular(AnchorTabular):
         try:
             ncpu = kwargs['ncpu']
         except KeyError:
-            logging.warning('DistributedAnchorTabular object has been initalised but kwargs did not contain '
-                            'expected argument, ncpu. Defaulting to ncpu=2!'
-                            )
+            logging.warning(
+                'DistributedAnchorTabular object has been initalised but kwargs did not contain '
+                'expected argument, ncpu. Defaulting to ncpu=2!'
+            )
             ncpu = 2
 
         disc = Discretizer(train_data, self.numerical_features, self.feature_names, percentiles=disc_perc)
         d_train_data = disc.discretize(train_data)
         self.feature_values.update(disc.feature_intervals)
-        sampler_args = (self.predictor,
-                        disc_perc,
-                        self.numerical_features,
-                        self.categorical_features,
-                        self.feature_names,
-                        self.feature_values,
-                        )
+        sampler_args = (
+            self.predictor,
+            disc_perc,
+            self.numerical_features,
+            self.categorical_features,
+            self.feature_names,
+            self.feature_values,
+            self.seed,
+        )
         train_data_id = ray.put(train_data)
         d_train_data_id = ray.put(d_train_data)
         samplers = [TabularSampler(*sampler_args) for _ in range(ncpu)]
