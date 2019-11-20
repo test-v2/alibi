@@ -10,6 +10,28 @@ from alibi.utils.distributed import ActorPool, RAY_INSTALLED
 logger = logging.getLogger(__name__)
 
 
+def matrix_subset(matrix: np.ndarray, n_samples: int) -> np.ndarray:
+    """ Samples random rows from a matrix
+
+    Parameters
+    ----------
+    matrix
+        Matrix to sample from
+    n_samples
+        Number of samples returned
+
+    Returns
+    -------
+        Sample of the input matrix.
+    """
+
+    if matrix.shape[0] == 0:
+        return matrix
+    n_samples = min(matrix.shape[0], n_samples)
+
+    return matrix[np.random.choice(matrix.shape[0], n_samples, replace=False)]
+
+
 class AnchorBaseBeam(object):
 
     def __init__(self, samplers: List[Callable], **kwargs) -> None:
@@ -551,7 +573,6 @@ class AnchorBaseBeam(object):
                                                'uncovered_false': np.array([]),
                                                }
         return anchor
-
     @staticmethod
     def to_sample(means: np.ndarray, ubs: np.ndarray, lbs: np.ndarray, desired_confidence: float, epsilon_stop: float):
         """
@@ -812,7 +833,6 @@ class DistributedAnchorBaseBeam(AnchorBaseBeam):
         """
 
         import ray
-
         coverage_data, _ = self.sample_fcn(samplers[0],
                                            (0, ()),
                                            coverage_samples,
