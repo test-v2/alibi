@@ -5,8 +5,7 @@ from collections import defaultdict, namedtuple
 from functools import partial
 from typing import Callable, Tuple, Set, Dict, List
 
-from alibi.utils.distributed import ActorPool
-
+from alibi.utils.distributed import ActorPool, RAY_INSTALLED
 
 logger = logging.getLogger(__name__)
 
@@ -560,18 +559,20 @@ class AnchorBaseBeam(object):
                 anchor['examples'].append('placeholder')
 
         if to_resample:
-            _, _ = self.draw_samples(to_resample, batch_size)
+            return self.resample_partial_anchors(anchor, batch_size, state, to_resample, to_resample_idx)
+        else:
+            return anchor
 
-            while to_resample:
-                feats, example_idx = to_resample.pop(), to_resample_idx.pop()
-                anchor['examples'][example_idx] = {'covered_true': state['t_covered_true'][feats],
-                                                   'covered_false': state['t_covered_false'][feats],
-                                                   'uncovered_true': np.array([]),
-                                                   'uncovered_false': np.array([]),
-                                                   }
-        assert 'placeholder' not in anchor['examples']
+    def resample_partial_anchors(self, anchor, batch_size, state, to_resample, to_resample_idx):
+        _, _ = self.draw_samples(to_resample, batch_size)
+        while to_resample:
+            feats, example_idx = to_resample.pop(), to_resample_idx.pop()
+            anchor['examples'][example_idx] = {'covered_true': state['t_covered_true'][feats],
+                                               'covered_false': state['t_covered_false'][feats],
+                                               'uncovered_true': np.array([]),
+                                               'uncovered_false': np.array([]),
+                                               }
         return anchor
-
     @staticmethod
     def to_sample(means: np.ndarray, ubs: np.ndarray, lbs: np.ndarray, desired_confidence: float, epsilon_stop: float):
         """
@@ -804,6 +805,10 @@ class AnchorBaseBeam(object):
 
 class DistributedAnchorBaseBeam(AnchorBaseBeam):
 
+    if RAY_INSTALLED:
+        import ray
+        ray = ray
+
     def __init__(self, samplers: List[Callable], **kwargs) -> None:
 
         super(DistributedAnchorBaseBeam, self).__init__(samplers)
@@ -828,12 +833,13 @@ class DistributedAnchorBaseBeam(AnchorBaseBeam):
         """
 
         import ray
-        [coverage_data] = ray.get(self.sample_fcn(samplers[0],
-                                                  (0, ()),
-                                                  coverage_samples,
-                                                  c_labels=False)
-                                  )
-        return coverage_data
+        coverage_data, _ = self.sample_fcn(samplers[0],
+                                           (0, ()),
+                                           coverage_samples,
+                                           c_labels=False,
+                                           )
+
+        return ray.get(coverage_data)
 
     def draw_samples(self, anchors: list, batch_size: int) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -867,3 +873,15 @@ class DistributedAnchorBaseBeam(AnchorBaseBeam):
                 pos[anchor_idx], total[anchor_idx] = positives, n_samples
 
         return pos, total
+
+    def resample_partial_anchors(self, anchor, batch_size, state, to_resample, to_resample_idx):
+        _, _ = self.draw_samples(to_resample, batch_size)
+        while to_resample:
+            feats, example_idx = to_resample.pop(), to_resample_idx.pop()
+            anchor['examples'][example_idx] = {'covered_true': self.ray.get(state['t_covered_true'][feats]),
+                                               'covered_false': self.ray.get(state['t_covered_false'][feats]),
+                                               'uncovered_true': np.array([]),
+                                               'uncovered_false': np.array([]),
+                                               }
+        return anchor
+
