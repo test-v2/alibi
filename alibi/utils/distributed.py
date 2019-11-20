@@ -1,3 +1,6 @@
+import itertools
+
+
 def check_ray():
     """
     Checks if ray is installed
@@ -120,7 +123,7 @@ class ActorPool(object):
         if self._idle_actors:
             actor = self._idle_actors.pop()
             future = fn(actor, value)
-            self._future_to_actor[future] = (self._next_task_index, actor)
+            self._future_to_actor[tuple(future)] = (self._next_task_index, actor)
             self._index_to_future[self._next_task_index] = future
             self._next_task_index += 1
         else:
@@ -193,17 +196,30 @@ class ActorPool(object):
         """
         if not self.has_next():
             raise StopIteration("No more results to get")
+        all_futures = list(itertools.chain(*list(self._future_to_actor)))
         res, _ = self.ray.wait(
-            list(self._future_to_actor), num_returns=1, timeout=timeout)
+            all_futures, num_returns=1, timeout=timeout)
         if res:
             [future] = res
         else:
             raise TimeoutError("Timed out waiting for result")
-        i, a = self._future_to_actor.pop(future)
+        future_idx = all_futures.index(future)
+        if future_idx in range(1, len(all_futures) - 1):
+            if future_idx % 2 == 0:
+                all_obj_idx = (future, all_futures[future_idx + 1])
+            else:
+                all_obj_idx = (all_futures[future_idx - 1], future)
+        elif future_idx == len(all_futures) - 1:
+            all_obj_idx = (all_futures[-2], all_futures[-1])
+        else:
+            all_obj_idx = (all_futures[0], all_futures[1])
+
+        i, a = self._future_to_actor.pop(all_obj_idx)
         self._return_actor(a)
         del self._index_to_future[i]
         self._next_return_index = max(self._next_return_index, i + 1)
-        return self.ray.get(future)
+
+        return all_obj_idx
 
     def _return_actor(self, actor):
         self._idle_actors.append(actor)
