@@ -174,9 +174,9 @@ class TabularSampler(object):
             labels = self.compute_prec(raw_data)
             covered_true = raw_data[labels, :][:self.n_covered_ex]
             covered_false = raw_data[np.logical_not(labels), :][:self.n_covered_ex]
-            return [covered_true, covered_false, labels.astype(int), data, coverage, anchor[0]]
+            return [covered_true, covered_false], [labels.astype(int), data, coverage, anchor[0]]
         else:
-            return data   # only binarised data is used for coverage computation
+            return data, []   # only binarised data is used for coverage computation
 
     def compute_prec(self, samples: np.ndarray) -> np.ndarray:
         """
@@ -393,10 +393,16 @@ class TabularSampler(object):
 
 class RemoteSampler(object):
     """ A wrapper that facilitates the use of TabularSampler for distributed sampling."""
+
+    # TODO: THIS WILL BREAK IF RAY NOT INSTALLED BECAUSE OF THE DECORATOR?
+    if RAY_INSTALLED:
+        import ray
+
     def __init__(self, *args):
         self.train_id, self.d_train_id, self.sampler = args
         self.sampler = self.sampler.deferred_init(self.train_id, self.d_train_id)
 
+    @ray.method(num_return_vals=2)
     def __call__(self, anchors_batch: Union[Tuple[int, tuple], List[Tuple[int, tuple]]], num_samples: int,
                  c_labels: bool = True):  # TODO: output typing
         """
@@ -418,11 +424,12 @@ class RemoteSampler(object):
         elif len(anchors_batch) == 1:     # batch size = 1
             return [self.sampler(*anchors_batch, num_samples, c_labels=c_labels)]
         else:                             # batch size > 1
-            batch_result = []
+            examples_batch, data_batch = [], []
             for anchor in anchors_batch:
-                batch_result.append(self.sampler(anchor, num_samples, c_labels=c_labels))
-
-            return batch_result
+                examples, data = self.sampler(anchor, num_samples, c_labels=c_labels)
+                data_batch.append(data)
+                examples_batch.append(examples_batch)
+            return examples_batch, data_batch
 
     def build_lookups(self, X):
         """
