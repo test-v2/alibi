@@ -13,9 +13,9 @@ explainer:
   disc_perc: !!python/tuple [25, 50, 75]
   beam_size: 1
   min_samples_start: 100
-  parallel: true
-  chunksize: 2
-  ncpu: 4
+  parallel: false
+  chunksize: ~
+  ncpu: ~
   verbose: false
   seed: 0
 

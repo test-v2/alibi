@@ -176,7 +176,7 @@ class TabularSampler(object):
             covered_false = raw_data[np.logical_not(labels), :][:self.n_covered_ex]
             return [covered_true, covered_false, labels.astype(int), data, coverage, anchor[0]]
         else:
-            return data   # only binarised data is used for coverage computation
+            return [data]   # only binarised data is used for coverage computation
 
     def compute_prec(self, samples: np.ndarray) -> np.ndarray:
         """

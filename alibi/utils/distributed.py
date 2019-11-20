@@ -38,7 +38,6 @@ class ActorPool(object):
         self._idle_actors = list(actors)
         self._future_to_actor = {}
         self._index_to_future = {}
-        self._ex_index_to_future = {}
         self._next_task_index = 0
         self._next_return_index = 0
         self._pending_submits = []
@@ -120,10 +119,9 @@ class ActorPool(object):
         """
         if self._idle_actors:
             actor = self._idle_actors.pop()
-            ex_future, future = fn(actor, value)
+            future = fn(actor, value)
             self._future_to_actor[future] = (self._next_task_index, actor)
             self._index_to_future[self._next_task_index] = future
-            self._ex_index_to_future[self._next_task_index] = ex_future
             self._next_task_index += 1
         else:
             self._pending_submits.append((fn, value))
@@ -164,18 +162,15 @@ class ActorPool(object):
             raise ValueError("It is not allowed to call get_next() after "
                              "get_next_unordered().")
         future = self._index_to_future[self._next_return_index]
-        ex_future = self._ex_index_to_future[self._next_return_index]
         if timeout is not None:
             res, _ = self.ray.wait([future], timeout=timeout)
-            ex_res = self.ray.wait([ex_future], timeot=timeout)
-            if not res or not ex_res:
+            if not res:
                 raise TimeoutError("Timed out waiting for result")
         del self._index_to_future[self._next_return_index]
-        del self._ex_index_to_future[self._next_return_index]
         self._next_return_index += 1
         i, a = self._future_to_actor.pop(future)
         self._return_actor(a)
-        return ex_future, self.ray.get(future)
+        return self.ray.get(future)
 
     def get_next_unordered(self, timeout=None):
         """Returns any of the next pending results.
