@@ -20,10 +20,7 @@ class ActorPool(object):
 
     if RAY_INSTALLED:
         import ray
-        ray = ray
-    else:
-        raise ImportError("Attempted to initialise ActorPool object but could not"
-                          "import ray. Please check ray is installed!")
+        ray = ray   # assign the module to a class variable
 
     def __init__(self, actors):
         # TODO: Add reference ...

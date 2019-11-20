@@ -8,6 +8,7 @@ from .anchor_base import AnchorBaseBeam, DistributedAnchorBaseBeam
 from .anchor_explanation import AnchorExplanation
 from alibi.utils.data import ArgmaxTransformer
 from alibi.utils.discretizer import Discretizer
+from alibi.utils.distributed import RAY_INSTALLED
 
 # TODO: Fix typing issues, add all output types
 
@@ -683,8 +684,9 @@ class AnchorTabular(object):
 
 class DistributedAnchorTabular(AnchorTabular):
 
-    import ray
-    ray = ray
+    if RAY_INSTALLED:
+        import ray
+        ray = ray  # assign the ray module to a static variable
 
     def __init__(self, predictor: Callable, feature_names: list, categorical_names: dict = None,
                  seed: int = None) -> None:
