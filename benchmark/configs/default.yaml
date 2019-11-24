@@ -23,8 +23,8 @@ explainer:
 experiment:
   n_runs: 25
   instance_idx: 6
-  ckpt_dir: /home/alex/git/work_experiments/RayPerformanceTest
-  ckpt: ray_decoupled
+  ckpt_dir: /home/alex/git/work_experiments/RayPerformanceTest/sampling
+  ckpt: ray_decoupled_mlt_datasets
   verbose: false
   data:
     preprocess: true

@@ -699,10 +699,10 @@ class DistributedAnchorTabular(AnchorTabular):
                          self.feature_names,
                          self.feature_values,
                          )
-        train_data_id = ray.put(train_data)
-        d_train_data_id = ray.put(d_train_data)
+        # train_data_id = ray.put(train_data)
+        # d_train_data_id = ray.put(d_train_data)
         samplers = [TabularSampler(*feat_metadata) for _ in range(ncpu)]
-        self.samplers = [RemoteSampler.remote(*(train_data_id, d_train_data_id, sampler)) for sampler in samplers]
+        self.samplers = [RemoteSampler.remote(*(train_data, d_train_data, sampler)) for sampler in samplers]
 
     def _build_sampling_lookups(self, X):
         lookups = [sampler.build_lookups.remote(X) for sampler in self.samplers][0]
