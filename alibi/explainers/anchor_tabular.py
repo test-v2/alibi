@@ -124,6 +124,17 @@ class TabularSampler(object):
 
         return val2idx
 
+    def set_instance_label(self, label: int) -> None:
+        """
+        Sets the sampler label. Necessary for setting the remote sampling process state during explain call.
+
+        Parameters
+        ----------
+        label
+            label of the instance to be explained
+        """
+        self.instance_label = label
+
     def __call__(self, anchor: Tuple[int, tuple], num_samples: int,  c_labels=True):# -> List[np.ndarray, np.ndarray, float, int]:
         """
         Draw samples from training data that contain the categorical features and discretized
@@ -186,7 +197,6 @@ class TabularSampler(object):
         -------
             an array of integers indicating whether the prediction was the same as the instance label
         """
-
         return (self.predictor(samples) == self.instance_label).astype(int)
 
     def _sample_from_train(self, anchor: tuple, num_samples: int) -> Tuple[np.ndarray, np.ndarray, float]:
@@ -417,6 +427,17 @@ class RemoteSampler(object):
 
             return batch_result
 
+    def set_instance_label(self, label: int) -> None:
+        """
+        Sets the remote sampler instance label
+
+        Parameters
+        ----------
+        label:
+            label of the instance to be explained
+        """
+        self.sampler.set_instance_label(label)
+
     def build_lookups(self, X):
         """
         Wrapper around TabularSampler.build_lookups
@@ -478,6 +499,7 @@ class AnchorTabular(object):
 
         self.samplers = []
         self.seed = seed
+        self.instance_label = None    # label of instance to be explained
 
     def fit(self, train_data: np.ndarray, disc_perc: tuple = (25, 50, 75), **kwargs) -> None:
         """
@@ -561,7 +583,7 @@ class AnchorTabular(object):
             self.instance_label = self.predictor(X.reshape(1, -1))[0]
 
         for sampler in self.samplers:
-            sampler.instance_label = self.instance_label
+            sampler.set_instance_label(self.instance_label)
 
         # build feature encoding and mappings from the instance values to database rows where similar records are found
         # get anchors and add metadata
@@ -757,7 +779,7 @@ class DistributedAnchorTabular(AnchorTabular):
             self.instance_label = self.predictor(X.reshape(1, -1))[0]
 
         for sampler in self.samplers:
-            sampler.instance_label = self.instance_label
+            sampler.set_instance_label.remote(self.instance_label)
 
         # build feature encoding and mappings from the instance values to database rows where similar records are found
         # get anchors and add metadata
