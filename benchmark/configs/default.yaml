@@ -13,18 +13,18 @@ explainer:
   disc_perc: !!python/tuple [25, 50, 75]
   beam_size: 10
   min_samples_start: 100
-  parallel: true
-  chunksize: 8
-  ncpu: 4
+  parallel: false
+  chunksize: ~
+  ncpu: ~
   verbose: false
   seed: 0
 
 # Experiment settings
 experiment:
   n_runs: 25
-  instance_idx: 6
+  instance_idx: 0
   ckpt_dir: /home/alex/git/work_experiments/RayPerformanceTest/sampling
-  ckpt: ray_decoupled_mlt_datasets
+  ckpt: seq_decoupled_mlt_datasets
   verbose: false
   data:
     preprocess: true
