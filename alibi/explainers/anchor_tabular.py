@@ -745,11 +745,10 @@ class DistributedAnchorTabular(AnchorTabular):
             self.categorical_features,
             self.feature_names,
             self.feature_values,
-            self.seed,
         )
         train_data_id = self.ray.put(train_data)
         d_train_data_id = self.ray.put(d_train_data)
-        samplers = [TabularSampler(*sampler_args) for _ in range(ncpu)]
+        samplers = [TabularSampler(*sampler_args, seed=self.seed) for _ in range(ncpu)]
         self.samplers = [self.ray.remote(RemoteSampler).remote(*(train_data_id, d_train_data_id, sampler))
                          for sampler in samplers]
 
