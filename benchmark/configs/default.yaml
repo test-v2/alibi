@@ -11,20 +11,20 @@ explainer:
   type: tabular
   threshold: 0.95
   disc_perc: !!python/tuple [25, 50, 75]
-  beam_size: 10
+  beam_size: 1
   min_samples_start: 100
-  parallel: true
-  chunksize: 8
-  ncpu: 4
+  parallel: false
+  chunksize: ~
+  ncpu: ~
   verbose: false
   seed: 0
 
 # Experiment settings
 experiment:
   n_runs: 25
-  instance_idx: 0
+  instance_idx: 6
   ckpt_dir: /home/alex/git/work_experiments/RayPerformanceTest/sampling_clf_new
-  ckpt: seq_decoupled_clf
+  ckpt: seq_decoupled_clf_mlt_datasets
   verbose: false
   data:
     preprocess: true
