@@ -1,16 +1,21 @@
-dataset: adult
+dataset: movie_sentiment
 
 # Example of configuring a random forest classifier
 classifier:
-  name: rf
-  n_estimators: 50
+  name: lr
   seed: 0
+  solver: liblinear  # for logistic regression
 
 # Example of configuring a AnchorTabular explainer
 explainer:
-  type: tabular
+  type: text
   threshold: 0.95
-  disc_perc: !!python/tuple [25, 50, 75]
+  pert_model: en_core_web_md  # spaCy model used for sentence perturbation
+  use_unk: true
+  use_similarity_proba: false
+  sample_proba: 0.5
+  temperature: 1.
+  top_n: 100
   parallel: false
   verbose: false
   seed: 0
@@ -18,18 +23,23 @@ explainer:
 # Experiment settings
 experiment:
   n_runs: 100
-  instance_split: test # can be train or ~ (aka None - taken from data before splitting)
-  instance_idx: 6
+  instance_split: ~ # can be train/test/val or ~ (aka None - taken from data before splitting)
+  instance_idx: 4
   ckpt_dir: /home/alex/git/work_experiments/BenchmarkTest
   ckpt: BenchmarkTestHashPassingExample2.pkl
-  verbose: false
-  show_covered: false # only relevant if verbose=True
+  verbose: true
   data:
     preprocess: true
-    preprocess_opts: ~
+    preprocess_opts: # only used for text data for now
+      min_df: 1
     split_opts:
-      method: shuffle # see default_text.yaml for alternative
-      seed: 0
+      # train_test_val: uses sklearn.model.selection.train_test_split
+      # shuffle: shuffles all data and puts first n_train_records in X_train
+      method: train_test_val
+      test_size: 0.2 # fraction of data in test split
+      validation_set: true
+      val_size: 0.1  # fraction of train split put into validation
+      seed: 42       # same seed for split train/test and val from test
       n_train_records: 30000
   save:
     # elapsed time included by default
@@ -49,4 +59,4 @@ experiment:
       covered_false: [raw, examples, covered_false]
   profile: true
   profile_dir: /home/alex/git/work_experiments/ProfileData
-  profile_out: benchmark_stats.cprof
+  profile_out: benchmark_stats_text_default.cprof

@@ -11,19 +11,27 @@ from operator import methodcaller
 from timeit import default_timer as timer
 from typing import Any, Sequence
 
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
-from alibi.explainers import AnchorTabular
+import spacy
+
 import alibi.datasets as datasets
 
-SUPPORTED_EXPLAINERS = ['tabular']
+from alibi.explainers import AnchorTabular, AnchorText
+from alibi.utils.download import spacy_model
+from alibi.utils.wrappers import Predictor
+
+SUPPORTED_EXPLAINERS = ['tabular', 'text']
 SUPPORTED_DATASETS = ['adult', 'imagenet', 'movie_sentiment']
-SUPPORTED_CLASSIFIERS = ['rf']
+SUPPORTED_CLASSIFIERS = ['rf', 'lr']
 
 # TODO: Typing and documentation
 
@@ -39,18 +47,6 @@ class Timer:
     def __exit__(self, *args):
         self.t_elapsed = timer() - self.start
 
-
-class Predictor(object):
-
-    def __init__(self, clf, preprocessor=None):
-        self.predict_fcn = clf.predict
-        self.preprocessor = preprocessor
-
-    def __call__(self, x):
-        if self.preprocessor:
-            return self.predict_fcn(self.preprocessor.transform(x))
-
-
 def load_dataset(*, dataset='adult'):
 
     method = 'fetch_{}'.format(dataset)
@@ -62,26 +58,81 @@ def load_dataset(*, dataset='adult'):
 
 def split_data(dataset, opts):
 
-    data, target = dataset.data, dataset.target
-    np.random.seed(opts['seed'])
+    seed = opts['seed']
 
+    if opts['method'] == 'shuffle':
+        n_train_records = opts['n_train_records']
+        fmt = "Splitting by {}, {} records included in train split..."
+        print(fmt.format(opts['method'], n_train_records))
+        return _by_shuffle(dataset, n_train_records, seed)
+    else:
+        split_fractions = {
+            'test': opts['test_size'],
+            'val': opts['val_size'],
+        }
+        print(split_fractions)
+        fmt = "Splitting by {} ..."
+        print(fmt.format(opts['method']))
+        return _train_test_val(dataset, seed, split_fractions)
+
+
+
+def _by_shuffle(dataset, n_train_records, seed):
+
+    np.random.seed(seed)
+
+    data, target = dataset.data, dataset.target
     data_perm = np.random.permutation(np.c_[data, target])
     data = data_perm[:, :-1]
     target = data_perm[:, -1]
-
-    idx = opts['max_records']
-    X_train, Y_train = data[:idx, :], target[:idx]
-    X_test, Y_test = data[idx + 1:, :], target[idx + 1:]
-
+    X_train, Y_train = data[:n_train_records, :], target[:n_train_records]
+    X_test, Y_test = data[n_train_records + 1:, :], target[n_train_records + 1:]
     return {'X_train': X_train,
             'Y_train': Y_train,
             'X_test': X_test,
             'Y_test': Y_test
             }
 
+def _train_test_val(dataset, seed, split_fractions, split_val=True):
 
-def preprocess_adult(dataset, splits):
+    data, labels = dataset.data, dataset.target
+    np.random.seed(seed)
+    test_size = split_fractions['test']
+    print("... test size is: {}.".format(test_size))
+    train, test, train_labels, test_labels = train_test_split(data,
+                                                              labels,
+                                                              test_size=split_fractions['test'],
+                                                              random_state=seed,
+                                                              )
+    splits = {
+        'X_train': train,
+        'Y_train': np.array(train_labels),
+        'X_test': test,
+        'Y_test': np.array(test_labels),
+    }
 
+    if split_val:
+        val_size = split_fractions['val']
+        print("... val size is: {}.".format(val_size))
+        train, val, train_labels, val_labels = train_test_split(train,
+                                                                train_labels,
+                                                                test_size=val_size,
+                                                                random_state=seed,
+                                                                )
+        val_labels = np.array(val_labels)
+        splits.update(
+            [('X_train', train),
+             ('Y_train', train_labels),
+             ('X_val', val),
+             ('Y_val', val_labels)
+             ]
+        )
+    return splits
+
+
+def preprocess_adult(dataset, splits, opts=None):
+
+    # TODO: opts not used currently, pipelines hardcoded
     feature_names = dataset.feature_names
     category_map = dataset.category_map
     X_train = splits['X_train']
@@ -101,6 +152,16 @@ def preprocess_adult(dataset, splits):
     return preprocessor
 
 
+def preprocess_movie_sentiment(dataset, splits, opts=None):
+
+    X_train = splits['X_train']
+    preprocessor = CountVectorizer(min_df=opts['min_df'])
+    preprocessor.fit(X_train)
+
+    return preprocessor
+
+
+
 def display_performance(splits, predict_fn):
     print('Train accuracy: ', accuracy_score(splits['Y_train'], predict_fn(splits['X_train'])))
     print('Test accuracy: ', accuracy_score(splits['Y_test'], predict_fn(splits['X_test'])))
@@ -110,6 +171,8 @@ def predict_fcn(clf, preprocessor=None):
     if preprocessor:
         return lambda x: clf.predict(preprocessor.transform(x))
     return lambda x: clf.predict(x)
+
+# TODO: in the future one should be able to pass their own classifier that's already fitted
 
 
 def fit_rf(splits, config, preprocessor=None):
@@ -126,7 +189,24 @@ def fit_rf(splits, config, preprocessor=None):
     return Predictor(clf, preprocessor=preprocessor)
 
 
-def get_tabular_explainer(predictor, dataset, split, config):
+def fit_lr(splits, config, preprocessor=None):
+
+    np.random.seed(config['seed'])
+    clf = LogisticRegression(solver=config['solver'])
+    if preprocessor:
+        clf.fit(preprocessor.transform(splits['X_train']), splits['Y_train'])
+    else:
+        clf.fit(splits['X_train'], splits['Y_train'])
+
+    return Predictor(clf, preprocessor=preprocessor)
+
+
+def get_tabular_explainer(predictor, config, dataset=None, split=None):
+
+    if not dataset or not split:
+        raise ValueError("Anchor Tabular requires both a dataset object and"
+                         " a dictionary with datasets split for fitting but"
+                         " at least one was not passed to get_tabular_function!")
 
     feature_names = dataset.feature_names
     category_map = dataset.category_map
@@ -138,33 +218,54 @@ def get_tabular_explainer(predictor, dataset, split, config):
     return explainer
 
 
-def display_prediction(predict_fn, instance_id, splits, dataset):
+def get_text_explainer(predictor, config, dataset=None, split=None):
+
+    model_name = config['pert_model']
+    spacy_model(model=model_name)
+    perturbation_model = spacy.load(model_name)
+
+    return AnchorText(perturbation_model, predictor, seed=config['seed'])
+
+
+def get_explanation(explainer, instance, expln_config):
+    return explainer.explain(instance,
+                             **expln_config,
+                             )
+
+
+def _display_prediction(predict_fn, instance_id, splits, dataset):
     class_names = dataset.classnames
     X_test = splits['X_test']
     print('Prediction: ', class_names[predict_fn(X_test[instance_id].reshape(1, -1))[0]])
 
 
-def get_explanation(explainer, expln_config, splits, exp_config):
-    instance_id = exp_config['instance_idx']
+def display_tabular_prediction(predictor, instance, dataset):
+    class_names = dataset.classnames
+    print('Prediction: ', class_names[predictor(instance.reshape(1, -1))[0]])
 
-    return explainer.explain(splits['X_test'][instance_id],
-                             threshold=expln_config['threshold'],
-                             verbose=expln_config['verbose'],
-                             parallel=expln_config['parallel'],
-                             )
+def display_text_prediction(predictor, instance, dataset):
+    class_names = dataset.classnames
+    print('Prediction: ', class_names[predictor([instance])[0]])
 
 
-def display_explanation(explanation):
+def display_explanation(explanation, show_covered=False):
     print('Anchor: %s' % (' AND '.join(explanation['names'])))
     print('Precision: %.2f' % explanation['precision'])
     print('Coverage: %.2f' % explanation['coverage'])
+
+    if show_covered:
+        print('\nExamples where anchor applies and model predicts positive')
+        print('\n'.join([x[0] for x in explanation['raw']['examples'][-1]['covered_true']]))
+        print('\nExamples where anchor applies and model predicts negative')
+        print('\n'.join([x[0] for x in explanation['raw']['examples'][-1]['covered_false']]))
 
 
 class ExplainerExperiment(object):
 
     def __init__(self, *, dataset, explainer, classifier, experiment):
 
-        self.dataset = dataset
+
+        self.dataset_name = dataset
         self.explainer_config = explainer
         self.experiment_config = experiment
         self.clf_config = classifier
@@ -183,30 +284,46 @@ class ExplainerExperiment(object):
         self._create_data_store()
 
         self.explainer = None
+        self.instance = None
         self.splits = None
+
 
     def __enter__(self):
 
         # load and split dataset
-        dataset = load_dataset(dataset=self.dataset)
+        dataset = load_dataset(dataset=self.dataset_name)
         splits = split_data(dataset, self.experiment_config['data']['split_opts'])
         self.splits = splits
+        self.dataset = dataset
 
         # optionally preprocess the dataset
         if self.experiment_config['data']['preprocess']:
-            preprocess_fcn = 'preprocess_{}'.format(self.dataset)
-            preprocessor = getattr(self._this_module, preprocess_fcn)(dataset, splits)
+            preprocess_fcn = 'preprocess_{}'.format(self.dataset_name)
+            preproc = getattr(self._this_module, preprocess_fcn)(dataset,
+                                                                 splits,
+                                                                 opts=self.experiment_config['data']['preprocess_opts'])
         else:
-            preprocessor = None
+            preproc = None
 
         # fit classifier
         clf_fcn = 'fit_{}'.format(self.clf_config['name'])
-        predictor = getattr(self._this_module, clf_fcn)(splits, self.clf_config, preprocessor=preprocessor)
+        self.predictor = getattr(self._this_module, clf_fcn)(splits, self.clf_config, preprocessor=preproc)
         explainer_fcn = 'get_{}_explainer'.format(self.explainer_config['type'])
 
         # create and fit explainer instance
-        explainer = getattr(self._this_module, explainer_fcn)(predictor, dataset, splits, self.explainer_config)
+        explainer = getattr(self._this_module, explainer_fcn)(self.predictor,
+                                                              self.explainer_config,
+                                                              dataset,
+                                                              splits)
         self.explainer = explainer
+
+        # retrieve instance to be explained
+        instance_idx = self.experiment_config['instance_idx']
+        instance_split = self.experiment_config['instance_split']
+        if instance_split:
+            self.instance = splits['X_'.format(instance_split)][instance_idx]
+        else:
+            self.instance = dataset.data[instance_idx]
 
         return self
 
@@ -251,6 +368,16 @@ class ExplainerExperiment(object):
         self._data_store['t_elapsed'].append(t_elapsed)
 
 
+def display(config, explanation, exp):
+
+    if config['experiment']['verbose']:
+        pred_display_fcn = 'display_{}_prediction'.format(config['explainer']['type'])
+        # display prediction on instance to be explained
+        getattr(exp._this_module, pred_display_fcn)(exp.predictor, exp.instance, exp.dataset)
+        display_explanation(explanation,
+                            show_covered=config['experiment']['show_covered'])
+    return
+
 def run_experiment(config):
 
     n_runs = int(config['experiment']['n_runs'])
@@ -258,15 +385,9 @@ def run_experiment(config):
     with ExplainerExperiment(**config) as exp:
         for _ in range(n_runs):
             with Timer() as time:
-                explanation = get_explanation(exp.explainer,
-                                              exp.explainer_config,
-                                              exp.splits,
-                                              exp.experiment_config,
-                                              )
+                explanation = get_explanation(exp.explainer, exp.instance, exp.explainer_config)
             exp.update(explanation, time.t_elapsed)
-            if config['experiment']['verbose']:
-                display_explanation(explanation)
-    return
+            display(config, explanation, exp)
 
 
 def profile(config):
@@ -278,14 +399,16 @@ def profile(config):
         print("WARNING: Profiler output directory already exits!"
               "Files may be overwritten!!!")
     prof_fullpath = os.path.join(prof_dir, config['experiment']['profile_out'])
-
+    result = []
     with ExplainerExperiment(**config) as exp:
-        cProfile.runctx('get_explanation(exp.explainer, exp.explainer_config, exp.splits, exp.experiment_config)',
+        cProfile.runctx('result.append(get_explanation(exp.explainer, exp.instance, exp.experiment_config))',
                         locals(),
                         globals(),
                         filename=prof_fullpath,
                         )
+        explanation = result[0]
 
+    display(config, explanation, exp)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Anchor Explanations Experiments')
