@@ -5,7 +5,6 @@ import collections
 import logging
 from collections import namedtuple
 from typing import Callable, NamedTuple, Tuple, Set, Dict
-from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +215,7 @@ class AnchorBaseBeam(object):
         return crit_arms._make((ut, lt))
 
     def lucb(self, anchors: list, sample_fcn: Callable, initial_stats: dict, epsilon: float, delta: float, batch_size: int, top_n: int,
-             verbose: bool = False, verbose_every: int = 1, pool=None) -> np.ndarray:
+             verbose: bool = False, verbose_every: int = 1) -> np.ndarray:
         """
         Parameters
         ----------
@@ -288,12 +287,9 @@ class AnchorBaseBeam(object):
 
             # draw samples for each critical anchor, update anchors' mean, upper and lower bound precision estimate
             selected_anchors = [anchors[idx] for idx in crit_a_idx]
-            if pool:
-                samples = list(pool.imap(partial(sample_fcn, num_samples=batch_size), selected_anchors))
-            else:
-                samples = []
-                for anchor in selected_anchors:
-                    samples.append(sample_fcn(anchor, num_samples=batch_size))
+            samples = []
+            for anchor in selected_anchors:
+                samples.append(sample_fcn(anchor, num_samples=batch_size))
             sample_stats = [self.update_state(s, anchor) for (s, anchor) in zip(samples, selected_anchors)]
             pos, total = zip(*sample_stats)
             idx = list(crit_a_idx)
@@ -597,11 +593,6 @@ class AnchorBaseBeam(object):
         if max_anchor_size is None:
             max_anchor_size = self.state['n_features']
 
-        if kwargs['parallel']:
-            main_pool, lucb_pool = Pool(kwargs['ncpu']), Pool(2)
-        else:
-            main_pool, lucb_pool = None, None
-
         # find best anchor using beam search until max anchor size
         while current_size <= max_anchor_size:
 
@@ -630,7 +621,6 @@ class AnchorBaseBeam(object):
                                           min(beam_size, len(anchors)),
                                           verbose=verbose,
                                           verbose_every=verbose_every,
-                                          pool=lucb_pool,
                                           )
             # store best anchors for the given anchor size (nb of features in the anchor)
             best_of_size[current_size] = [anchors[index] for index in candidate_anchors]
@@ -657,12 +647,9 @@ class AnchorBaseBeam(object):
 
             while remaining_anchors_idx.size > 0:
                 selected_anchors = [anchors[idx] for idx in remaining_anchors_idx]
-                if main_pool:
-                    samples = list(main_pool.imap(partial(sample_fn, num_samples=batch_size), selected_anchors))
-                else:
-                    samples = []
-                    for anchor in selected_anchors:
-                        samples.append(sample_fn(anchor, num_samples=batch_size))
+                samples = []
+                for anchor in selected_anchors:
+                    samples.append(sample_fn(anchor, num_samples=batch_size))
                 # TODO: Can we do better than to wait and update the state sequentially if sampling in parallel?
                 anchors_means, anchors_kl_constr = [], []
                 # TODO: If we call get_initial_stats, we could use the same pattern as in lucb and ditch the for loop
@@ -716,12 +703,6 @@ class AnchorBaseBeam(object):
             candidate_anchors = self.lucb(anchors, sample_fn, initial_stats, epsilon, delta, batch_size, 1,
                                           verbose=verbose)
             best_anchor = anchors[candidate_anchors[0]]
-
-        if kwargs['parallel']:
-            main_pool.close()
-            main_pool.join()
-            lucb_pool.close()
-            lucb_pool.join()
 
         # return explanation dictionary
         return AnchorBaseBeam.get_anchor_from_tuple(best_anchor, self.state)
