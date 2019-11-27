@@ -34,7 +34,9 @@ SUPPORTED_DATASETS = ['adult', 'imagenet', 'movie_sentiment']
 SUPPORTED_CLASSIFIERS = ['rf', 'lr']
 
 # TODO: Typing and documentation
-
+# TODO: Raise NotImplemented error if show_covered=True for Anchor Tabular
+# TODO: opts not used currently in preprocess_adult, pipelines hardcoded
+# TODO: in the future one should be able to pass their own classifier that's already fitted as opp to using fit_*
 
 class Timer:
     def __init__(self):
@@ -59,28 +61,25 @@ def load_dataset(*, dataset='adult'):
 def split_data(dataset, opts):
 
     seed = opts['seed']
-
-    if opts['method'] == 'shuffle':
+    method = opts['method']
+    print("Splitting using {} method ...".format(method))
+    if method == 'shuffle':
         n_train_records = opts['n_train_records']
-        fmt = "Splitting by {}, {} records included in train split..."
-        print(fmt.format(opts['method'], n_train_records))
-        return _by_shuffle(dataset, n_train_records, seed)
+        return _shuffle(dataset, n_train_records, seed)
     else:
         split_fractions = {
             'test': opts['test_size'],
             'val': opts['val_size'],
         }
-        print(split_fractions)
-        fmt = "Splitting by {} ..."
-        print(fmt.format(opts['method']))
         return _train_test_val(dataset, seed, split_fractions)
 
 
 
-def _by_shuffle(dataset, n_train_records, seed):
+def _shuffle(dataset, n_train_records, seed):
 
     np.random.seed(seed)
-
+    fmt = "{} records included in train split..."
+    print(fmt.format(n_train_records))
     data, target = dataset.data, dataset.target
     data_perm = np.random.permutation(np.c_[data, target])
     data = data_perm[:, :-1]
@@ -132,7 +131,6 @@ def _train_test_val(dataset, seed, split_fractions, split_val=True):
 
 def preprocess_adult(dataset, splits, opts=None):
 
-    # TODO: opts not used currently, pipelines hardcoded
     feature_names = dataset.feature_names
     category_map = dataset.category_map
     X_train = splits['X_train']
@@ -160,22 +158,19 @@ def preprocess_movie_sentiment(dataset, splits, opts=None):
 
     return preprocessor
 
-
-
-def display_performance(splits, predict_fn):
-    print('Train accuracy: ', accuracy_score(splits['Y_train'], predict_fn(splits['X_train'])))
-    print('Test accuracy: ', accuracy_score(splits['Y_test'], predict_fn(splits['X_test'])))
-
+def display_performance(splits, predictor):
+    print('Train accuracy: ', accuracy_score(splits['Y_train'], predictor(splits['X_train'])))
+    print('Test accuracy: ', accuracy_score(splits['Y_test'], predictor(splits['X_test'])))
 
 def predict_fcn(clf, preprocessor=None):
     if preprocessor:
         return lambda x: clf.predict(preprocessor.transform(x))
     return lambda x: clf.predict(x)
 
-# TODO: in the future one should be able to pass their own classifier that's already fitted
-
 
 def fit_rf(splits, config, preprocessor=None):
+
+    print("Fitting classifier ...")
 
     np.random.seed(config['seed'])
     clf = RandomForestClassifier(n_estimators=config['n_estimators'])
@@ -184,19 +179,22 @@ def fit_rf(splits, config, preprocessor=None):
     else:
         clf.fit(splits['X_train'], splits['Y_train'])
 
-    display_performance(splits, predict_fcn(clf, preprocessor=preprocessor))
+    display_performance(splits, Predictor(clf, preprocessor=preprocessor))
 
     return Predictor(clf, preprocessor=preprocessor)
 
 
 def fit_lr(splits, config, preprocessor=None):
 
+    print("Fitting classifier ...")
     np.random.seed(config['seed'])
     clf = LogisticRegression(solver=config['solver'])
     if preprocessor:
         clf.fit(preprocessor.transform(splits['X_train']), splits['Y_train'])
     else:
         clf.fit(splits['X_train'], splits['Y_train'])
+
+    display_performance(splits, Predictor(clf, preprocessor=preprocessor))
 
     return Predictor(clf, preprocessor=preprocessor)
 
@@ -239,24 +237,32 @@ def _display_prediction(predict_fn, instance_id, splits, dataset):
     print('Prediction: ', class_names[predict_fn(X_test[instance_id].reshape(1, -1))[0]])
 
 
-def display_tabular_prediction(predictor, instance, dataset):
-    class_names = dataset.classnames
-    print('Prediction: ', class_names[predictor(instance.reshape(1, -1))[0]])
+def _tabular_prediction(predictor, instance, dataset):
+    class_names = dataset.target_names
+    pred =  class_names[predictor(instance.reshape(1, -1))[0]]
+    alternative =  class_names[1 - predictor(instance.reshape(1, -1))[0]]
+    print('Prediction: ', pred)
+    print('Alternative', alternative)
+    return pred, alternative
 
-def display_text_prediction(predictor, instance, dataset):
-    class_names = dataset.classnames
-    print('Prediction: ', class_names[predictor([instance])[0]])
+def _text_prediction(predictor, instance, dataset):
+    class_names = dataset.target_names
+    pred =  class_names[predictor([instance])[0]]
+    alternative  = class_names[1 - predictor([instance])[0]]
+    print('Prediction: ', pred)
+    print('Alternative', alternative)
+    return pred, alternative
 
 
-def display_explanation(explanation, show_covered=False):
+def display_explanation(pred, alternative, explanation, show_covered=False):
     print('Anchor: %s' % (' AND '.join(explanation['names'])))
     print('Precision: %.2f' % explanation['precision'])
     print('Coverage: %.2f' % explanation['coverage'])
 
     if show_covered:
-        print('\nExamples where anchor applies and model predicts positive')
+        print('\nExamples where anchor applies and model predicts {}'.format(pred))
         print('\n'.join([x[0] for x in explanation['raw']['examples'][-1]['covered_true']]))
-        print('\nExamples where anchor applies and model predicts negative')
+        print('\nExamples where anchor applies and model predicts {}'.format(alternative))
         print('\n'.join([x[0] for x in explanation['raw']['examples'][-1]['covered_false']]))
 
 
@@ -321,27 +327,32 @@ class ExplainerExperiment(object):
         instance_idx = self.experiment_config['instance_idx']
         instance_split = self.experiment_config['instance_split']
         if instance_split:
-            self.instance = splits['X_'.format(instance_split)][instance_idx]
+            self.instance = splits['X_{}'.format(instance_split)][instance_idx]
         else:
             self.instance = dataset.data[instance_idx]
 
         return self
 
     def __exit__(self, *args):
-        self._save_exp_metadata()
 
-        if not os.path.exists(self.experiment_config['ckpt_dir']):
-            os.makedirs(self.experiment_config['ckpt_dir'])
+        if self.experiment_config['test_only']:
+            print("WARNING: test_only set to true in experiment config, "
+                  "experiment output .pkl will not be saved!")
         else:
-            print("WARNING: Checkpoint directory already exists, "  # TODO: Setup logging 
-                  "files may be overwritten!")
+            self._save_exp_metadata()
 
-        fullpath = os.path.join(self.experiment_config['ckpt_dir'],
-                                self.experiment_config['ckpt'])
-        fullpath = fullpath if fullpath.split(".")[-1] == 'pkl' else fullpath + '.pkl'
+            if not os.path.exists(self.experiment_config['ckpt_dir']):
+                os.makedirs(self.experiment_config['ckpt_dir'])
+            else:
+                print("WARNING: Checkpoint directory already exists, "  # TODO: Setup logging 
+                      "files may be overwritten!")
 
-        with open(fullpath, 'wb') as f:
-            pickle.dump(self._data_store, f)
+            fullpath = os.path.join(self.experiment_config['ckpt_dir'],
+                                    self.experiment_config['ckpt'])
+            fullpath = fullpath if fullpath.split(".")[-1] == 'pkl' else fullpath + '.pkl'
+
+            with open(fullpath, 'wb') as f:
+                pickle.dump(self._data_store, f)
 
     def _read_recursive(self, data: dict, fields: Sequence) -> Any:
         if len(fields) == 1:
@@ -371,16 +382,36 @@ class ExplainerExperiment(object):
 def display(config, explanation, exp):
 
     if config['experiment']['verbose']:
-        pred_display_fcn = 'display_{}_prediction'.format(config['explainer']['type'])
+        pred_fcn = '_{}_prediction'.format(config['explainer']['type'])
         # display prediction on instance to be explained
-        getattr(exp._this_module, pred_display_fcn)(exp.predictor, exp.instance, exp.dataset)
-        display_explanation(explanation,
+        pred, alternative = getattr(exp._this_module, pred_fcn)(exp.predictor, exp.instance, exp.dataset)
+        display_explanation(pred,
+                            alternative,
+                            explanation,
                             show_covered=config['experiment']['show_covered'])
     return
+
+def check(config):
+
+    if config['explainer']['type'] not in SUPPORTED_EXPLAINERS:
+        raise NotImplementedError("Experiments are supported only for tabular data!")
+    if config['dataset'] not in SUPPORTED_DATASETS:
+        raise ValueError("Only datasets adult/imagenet/movie_sentiment are supported")
+    if config['classifier']['name'] not in SUPPORTED_CLASSIFIERS:
+        raise NotImplementedError("Only random forest classifiers are supported!")
+
+    if config['explainer']['type'] == 'tabular':
+        if config['experiment']['verbose']:
+            if config['experiment']['show_covered']:
+                raise NotImplementedError("Human readable covered true and false examples"
+                                          "not implemented for AnchorTabular. Please implement"
+                                          "or set show_covered=False in experiment confinguration"
+                                          "to continue.")
 
 def run_experiment(config):
 
     n_runs = int(config['experiment']['n_runs'])
+    check(config)
 
     with ExplainerExperiment(**config) as exp:
         for _ in range(n_runs):
@@ -401,7 +432,7 @@ def profile(config):
     prof_fullpath = os.path.join(prof_dir, config['experiment']['profile_out'])
     result = []
     with ExplainerExperiment(**config) as exp:
-        cProfile.runctx('result.append(get_explanation(exp.explainer, exp.instance, exp.experiment_config))',
+        cProfile.runctx('result.append(get_explanation(exp.explainer, exp.instance, exp.explainer_config))',
                         locals(),
                         globals(),
                         filename=prof_fullpath,
@@ -416,12 +447,13 @@ if __name__ == '__main__':
                         nargs="?",
                         type=str,
                         default="configs/config.yaml",
-                        help="Configuration file for the experiment",
+                        help="Configuration file for the experiment.",
                         )
     parser.add_argument("--hash",
                         type=str,
                         help="If passed, the commit hash is stored with the experimental data "
-                             "to allow reproducing experiment results")
+                             "to allow reproducing experiment results. Use `git rev-parse HEAD`"
+                             " to get the commit hash for your current branch.")
     args = parser.parse_args()
 
     with open(args.config) as fp:
@@ -429,12 +461,7 @@ if __name__ == '__main__':
 
     configuration['experiment']['commit_hash'] = args.hash
 
-    if configuration['explainer']['type'] not in SUPPORTED_EXPLAINERS:
-        raise NotImplementedError("Experiments are supported only for tabular data!")
-    if configuration['dataset'] not in SUPPORTED_DATASETS:
-        raise ValueError("Only datasets adult/imagenet/movie_sentiment are supported")
-    if configuration['classifier']['name'] not in SUPPORTED_CLASSIFIERS:
-        raise NotImplementedError("Only random forest classifiers are supported!")
+    check(configuration)
 
     if configuration['experiment']['profile']:
         profile(configuration)
