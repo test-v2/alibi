@@ -64,7 +64,7 @@ class Neighbors(object):
 
 class AnchorText(object):
 
-    def __init__(self, nlp: 'spacy.language.Language', predict_fn: Callable) -> None:
+    def __init__(self, nlp: 'spacy.language.Language', predict_fn: Callable, seed: int = None) -> None:
         """
         Initialize anchor text explainer.
 
@@ -74,7 +74,12 @@ class AnchorText(object):
             spaCy object
         predict_fn
             Model prediction function
+        seed
+            ensures explanations reproducibility if sed
         """
+
+        np.random.seed(seed)
+
         self.nlp = nlp
 
         # check if predict_fn returns predicted class or prediction probabilities for each class
