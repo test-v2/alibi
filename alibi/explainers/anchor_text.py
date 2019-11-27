@@ -1,3 +1,4 @@
+from alibi.utils.data import ArgmaxTransformer
 from .anchor_base import AnchorBaseBeam
 from .anchor_explanation import AnchorExplanation
 import logging
@@ -64,7 +65,7 @@ class Neighbors(object):
 
 class AnchorText(object):
 
-    def __init__(self, nlp: 'spacy.language.Language', predict_fn: Callable, seed: int = None) -> None:
+    def __init__(self, nlp: 'spacy.language.Language', predictor: Callable, seed: int = None) -> None:
         """
         Initialize anchor text explainer.
 
@@ -72,7 +73,7 @@ class AnchorText(object):
         ----------
         nlp
             spaCy object
-        predict_fn
+        predictor
             Model prediction function
         seed
             ensures explanations reproducibility if sed
@@ -82,12 +83,12 @@ class AnchorText(object):
 
         self.nlp = nlp
 
-        # check if predict_fn returns predicted class or prediction probabilities for each class
-        # if needed adjust predict_fn so it returns the predicted class
-        if np.argmax(predict_fn(['Hello world']).shape) == 0:
-            self.predict_fn = predict_fn
+        # check if predictor returns predicted class or prediction probabilities for each class
+        # if needed adjust predictor so it returns the predicted class
+        if np.argmax(predictor(['Hello world']).shape) == 0:
+            self.predictor = predictor
         else:
-            self.predict_fn = lambda x: np.argmax(predict_fn(x), axis=1)
+            self.predictor = ArgmaxTransformer(predictor)
 
         self.neighbors = Neighbors(self.nlp)
 
@@ -127,7 +128,7 @@ class AnchorText(object):
         # if no true label available; true label = predicted label
         true_label = desired_label
         if true_label is None:
-            true_label = self.predict_fn([text])[0]
+            true_label = self.predictor([text])[0]
 
         processed = self.nlp(text)  # spaCy tokens for text
         words = [x.text for x in processed]  # list with words in text
@@ -185,7 +186,7 @@ class AnchorText(object):
             # create labels using model predictions as true labels
             labels = np.array([])
             if compute_labels:
-                labels = (self.predict_fn(raw_data) == true_label).astype(int)
+                labels = (self.predictor(raw_data) == true_label).astype(int)
             raw_data = np.array(raw_data).reshape(-1, 1)
             return raw_data, data, labels
 
@@ -258,7 +259,8 @@ class AnchorText(object):
         data_type = '<U' + str(int(total_len))
 
         # get anchors and add metadata
-        exp = AnchorBaseBeam.anchor_beam(sample_fn, delta=delta,
+        mab = AnchorBaseBeam()
+        exp = mab.anchor_beam(sample_fn, delta=delta,
                                          epsilon=tau, batch_size=batch_size,
                                          desired_confidence=threshold,
                                          stop_on_first=True, data_type=data_type,
@@ -267,7 +269,7 @@ class AnchorText(object):
         exp['names'] = [words[x] for x in exp['feature']]
         exp['positions'] = [positions[x] for x in exp['feature']]
         exp['instance'] = text
-        exp['prediction'] = self.predict_fn([text])[0]
+        exp['prediction'] = self.predictor([text])[0]
         exp = AnchorExplanation('text', exp)
 
         # output explanation dictionary

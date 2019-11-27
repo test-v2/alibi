@@ -63,7 +63,7 @@ def test_anchor_text(predict_type, present, use_similarity_proba, use_unk, thres
 
     # test explainer initialization
     explainer = AnchorText(nlp, predict_fn)
-    assert explainer.predict_fn(['book']).shape == (1,)
+    assert explainer.predictor(['book']).shape == (1,)
 
     # test sampling function
     text = 'This is a good book .'
