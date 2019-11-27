@@ -4,30 +4,32 @@ dataset: movie_sentiment
 classifier:
   name: lr
   seed: 0
-  solver: liblinear  # for logistic regression
+  solver: liblinear
 
 # Example of configuring a AnchorTabular explainer
 explainer:
   type: text
   threshold: 0.95
   pert_model: en_core_web_md  # spaCy model used for sentence perturbation
-  use_unk: true
-  use_similarity_proba: false
+  use_unk: false
+  use_similarity_proba: True
   sample_proba: 0.5
-  temperature: 1.
-  top_n: 100
+  temperature: 0.2
+  top_n: 20
   parallel: false
   verbose: false
   seed: 0
 
 # Experiment settings
 experiment:
+  test_only: false # disables saving output (avoid overwriting data when testing stuff)
   n_runs: 100
   instance_split: ~ # can be train/test/val or ~ (aka None - taken from data before splitting)
   instance_idx: 4
   ckpt_dir: /home/alex/git/work_experiments/BenchmarkTest
   ckpt: BenchmarkTestHashPassingExample2.pkl
   verbose: true
+  show_covered: true
   data:
     preprocess: true
     preprocess_opts: # only used for text data for now
@@ -58,5 +60,5 @@ experiment:
       covered_true: [raw, examples, covered_true]
       covered_false: [raw, examples, covered_false]
   profile: true
-  profile_dir: /home/alex/git/work_experiments/ProfileData
-  profile_out: benchmark_stats_text_default.cprof
+  profile_dir: /home/alex/git/work_experiments/ProfileData/dummy
+  profile_out: benchmark_stats_text_use_unk_false_optimised.cprof
