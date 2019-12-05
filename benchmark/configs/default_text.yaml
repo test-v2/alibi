@@ -18,6 +18,10 @@ explainer:
   top_n: 20
   verbose: false
   seed: 0
+  parallel: true
+  chunksize: 1
+  ncpu: 4
+
 
 # Experiment settings
 experiment:

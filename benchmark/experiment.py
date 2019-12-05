@@ -220,10 +220,14 @@ def get_tabular_explainer(predictor, config, dataset=None, split=None):
 def get_text_explainer(predictor, config, dataset=None, split=None):
 
     model_name = config['pert_model']
-    spacy_model(model=model_name)
-    perturbation_model = spacy.load(model_name)
 
-    return AnchorText(perturbation_model, predictor, seed=config['seed'])
+    return AnchorText(model_name,
+                      predictor,
+                      seed=config['seed'],
+                      parallel=config['parallel'],
+                      ncpu=config['ncpu'],
+                      chunksize=config['chunksize'],
+                      )
 
 
 def get_explanation(explainer, instance, expln_config):
@@ -441,6 +445,7 @@ def profile(config):
         explanation = result[0]
 
     display(config, explanation, exp)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Anchor Explanations Experiments')

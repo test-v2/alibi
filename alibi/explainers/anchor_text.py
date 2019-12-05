@@ -2,12 +2,17 @@ import logging
 import numpy as np
 from typing import Any, Callable, List, Tuple, Dict, TYPE_CHECKING
 
+import ray
+
+from alibi.utils.data import ArgmaxTransformer
 from .anchor_base import AnchorBaseBeam
 from .anchor_explanation import AnchorExplanation
 from alibi.utils.distributed import ActorPool
 
 if TYPE_CHECKING:
     import spacy
+
+import spacy
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +23,12 @@ logger = logging.getLogger(__name__)
 # TODO: Explain what self.crappy_neighbours is
 # TODO: Change selected examples display in notebook to keep up with the change in the algo
 
+from alibi.utils.download import spacy_model
+
+
 class Neighbors(object):
 
-    def __init__(self, nlp_obj: 'spacy.language.Language', n_similar: int = 500, w_prob: float = -15.) -> None:
+    def __init__(self, model_name, n_similar: int = 500, w_prob: float = -15., top_n = 20) -> None:
         """
         Initialize class identifying neighbouring words from the embedding for a given word.
 
@@ -33,13 +41,19 @@ class Neighbors(object):
         w_prob
             Smoothed log probability estimate of token's type
         """
-        self.nlp = nlp_obj
+        if isinstance(model_name, str):
+            spacy_model(model=model_name)
+            perturbation_model = spacy.load(model_name)
+            self.nlp = perturbation_model
+        else:
+            self.nlp = model_name
         self.w_prob = w_prob
         self.to_check = [w for w in self.nlp.vocab if w.prob >= self.w_prob and w.has_vector]  # list with spaCy lexemes
         # in vocabulary
         self.n_similar = n_similar
+        self.top_n = top_n
 
-    def neighbors(self, word: str, tag: str, top_n: int) -> dict:
+    def neighbors(self, word: str, tag: str) -> dict:
         """
         Find similar words for a certain word in the vocabulary.
 
@@ -56,19 +70,21 @@ class Neighbors(object):
         A list containing tuples with the similar words and similarity scores.
         """
 
+        def get_word_similarity(w):
+            return word_vocab.similarity(w)
+
         texts, similarities = [], []
-        i = 0
         if word in self.nlp.vocab:
             word_vocab = self.nlp.vocab[word]
             queries = [w for w in self.to_check if w.is_lower == word_vocab.is_lower]
             if word_vocab.prob < self.w_prob:
                 queries += [word_vocab]
             # sort queries by similarity in descending order
-            by_similarity = sorted(queries, key=lambda w: word_vocab.similarity(w), reverse=True)[:self.n_similar]
+            by_similarity = sorted(queries, key=get_word_similarity, reverse=True)[:self.n_similar]
             # store list of tuples containing the similar word and the word similarity ...
             # ... for nb of most similar words
             for lexeme in by_similarity:
-                if len(texts) == top_n - 1: # because we don't add the word itself
+                if len(texts) == self.top_n - 1:  # because we don't add the word itself
                     break
                 token = self.nlp(lexeme.orth_)[0]
                 if token.tag_ != tag or token.text == word:
@@ -80,12 +96,25 @@ class Neighbors(object):
                 'similarities': np.array(similarities),
                 }
 
+    def __call__(self, words_and_tags):
+        if isinstance(words_and_tags, tuple):
+            return self.neighbors(*words_and_tags)
+        else:
+            results = []
+            for pair in words_and_tags:
+                word, tag = pair
+                tmp = self.neighbors(word, tag)
+                tmp.update([('word', word)])
+                results.append(tmp)
+            return results
+
 
 class AnchorText(object):
 
     UNK = 'UNK'
 
-    def __init__(self, nlp: 'spacy.language.Language', predict_fn: Callable, seed: int = None) -> None:
+    def __init__(self, model_name,  predictor: Callable, seed: int = None, parallel=False,
+                 ncpu=2, top_n=20, chunksize=1) -> None:
         """
         Initialize anchor text explainer.
 
@@ -93,22 +122,31 @@ class AnchorText(object):
         ----------
         nlp
             spaCy object
-        predict_fn
+        predictor
             Model prediction function
         """
 
         np.random.seed(seed)
-
+        spacy_model(model=model_name)
+        nlp = spacy.load(model_name)
         self.nlp = nlp
-
-        # check if predict_fn returns predicted class or prediction probabilities for each class
-        # if needed adjust predict_fn so it returns the predicted class
-        if np.argmax(predict_fn(['Hello world']).shape) == 0:
-            self.predict_fn = predict_fn
+        self.parallel = parallel
+        if parallel:
+            ray.init()
+            self.neighbors = ray.remote(Neighbors)
+            self.pool = ActorPool([self.neighbors.remote(model_name, top_n=top_n) for _ in range(ncpu)])
+            self.chunksize = chunksize
+            self.sample_fcn = lambda actor, word_tag: actor.__call__.remote(word_tag)
         else:
-            self.predict_fn = lambda x: np.argmax(predict_fn(x), axis=1)
+            self.neighbors = Neighbors(nlp, top_n=top_n)
 
-        self.neighbors = Neighbors(self.nlp)
+        # check if predictor returns predicted class or prediction probabilities for each class
+        # if needed adjust predictor so it returns the predicted class
+        if np.argmax(predictor(['Hello world']).shape) == 0:
+            self.predictor = predictor
+        else:
+            self.predictor = ArgmaxTransformer(predictor)
+
         # self.neighbors = ray.remote(Neighbors(self.nlp))
         self.tokens = []     # tokens of the instance to be explained
         self.words = []      # words in the instance to be explained
@@ -194,7 +232,7 @@ class AnchorText(object):
             return [data]
 
     def compute_prec(self, samples):  # TODO: TYPES + DOCS
-        return self.predict_fn(samples.tolist()) == self.instance_label
+        return self.predictor(samples.tolist()) == self.instance_label
 
     def set_sampler_perturbation(self, use_unk, perturb_opts):
 
@@ -209,7 +247,10 @@ class AnchorText(object):
         if use_unk:
             self.perturbation = self._unk
         else:
+            from timeit import default_timer as timer
+            t_s = timer()
             self.find_similar_words()
+            print("Time elapsed", timer() - t_s)
             self.perturbation = self._similarity
 
     def _unk(self, present: tuple, num_samples: int) -> Tuple[np.ndarray, np.ndarray,]:
@@ -321,9 +362,22 @@ class AnchorText(object):
         return raw, data
 
     def find_similar_words(self):
-        for word, token in zip(self.words, self.tokens):
-            if word not in self.crappy_neighbours:
-                self.crappy_neighbours[word] = self.neighbors.neighbors(word, token.tag_, self.perturb_opts['top_n'])
+
+        if self.parallel:
+            inputs = [(word, token.tag_) for word, token in zip(self.words, self.tokens)]
+            crappy_neighbours = self.pool.map_unordered(
+                self.sample_fcn,
+                inputs,
+                chunksize=self.chunksize,
+            )
+            for batch in crappy_neighbours:
+                for result in batch:
+                    word = result['word']
+                    self.crappy_neighbours[word] = result
+        else:
+            for word, token in zip(self.words, self.tokens):
+                if word not in self.crappy_neighbours:
+                    self.crappy_neighbours[word] = self.neighbors([(word, token.tag_)])
 
     def set_data_type(self, use_unk):
         max_sent_len, max_len = 0, 0
@@ -336,7 +390,6 @@ class AnchorText(object):
                 max_len = max(max_len, int(similar_words.dtype.itemsize /
                                         np.dtype(similar_words.dtype.char+'1').itemsize))
                 max_sent_len += max_len
-
         self.dtype = '<U' + str(max_sent_len)
 
     def explain(self, text: str, threshold: float = 0.95, delta: float = 0.1,
@@ -386,7 +439,7 @@ class AnchorText(object):
         # store n_covered_ex positive/negative examples for each anchor
         self.n_covered_ex = n_covered_ex
         if true_label is None:
-            self.instance_label = self.predict_fn([text])[0]
+            self.instance_label = self.predictor([text])[0]
 
         # find words and their positions in the text instance
         self.set_words_and_pos(text)
@@ -426,7 +479,7 @@ class AnchorText(object):
         anchor['positions'] = [self.positions[x] for x in anchor['feature']]
         anchor['instance'] = text
         if true_label is None:
-            anchor['prediction'] = self.predict_fn([text])[0]
+            anchor['prediction'] = self.predictor([text])[0]
         else:
             anchor['prediction'] = self.instance_label
         exp = AnchorExplanation('text', anchor)
