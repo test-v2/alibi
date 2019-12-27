@@ -57,8 +57,8 @@ experiment:
     mapping:
       feat_ids : [raw, feature]
       feat_names: [raw, names]
-      covered_true: [raw, examples, covered_true]
-      covered_false: [raw, examples, covered_false]
+      covered_true: [raw, examples]
+      covered_false: [raw, examples]
   profile: true
   profile_dir: /home/alex/git/work_experiments/ProfileData/dummy
   profile_out: benchmark_stats_text_use_unk_false_optimised.cprof

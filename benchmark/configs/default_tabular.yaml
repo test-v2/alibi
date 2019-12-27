@@ -8,6 +8,7 @@ classifier:
 
 # Example of configuring a AnchorTabular explainer
 explainer:
+  beam_size: 10
   type: tabular
   threshold: 0.95
   disc_perc: !!python/tuple [25, 50, 75]
@@ -21,8 +22,8 @@ experiment:
   n_runs: 100
   instance_split: test # can be train or ~ (aka None - taken from data before splitting)
   instance_idx: 6
-  ckpt_dir: /home/alex/git/work_experiments/BenchmarkTest
-  ckpt: BenchmarkTestHashPassingExample2.pkl
+  ckpt_dir: /home/alex/git/work_experiments/TestExpEngine
+  ckpt: test_serial
   verbose: true
   show_covered: false  # true will raise NotImplemented Error
   data:
@@ -46,8 +47,8 @@ experiment:
     mapping:
       feat_ids : [raw, feature]
       feat_names: [raw, names]
-      covered_true: [raw, examples, covered_true]
-      covered_false: [raw, examples, covered_false]
+      covered_true: [raw, examples]
+      covered_false: [raw, examples]
   profile: true
   profile_dir: /home/alex/git/work_experiments/ProfileData
   profile_out: benchmark_stats.cprof
