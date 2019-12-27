@@ -3,7 +3,6 @@ import cProfile
 import os
 import pickle
 import sys
-import yaml
 
 import numpy as np
 
@@ -24,6 +23,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 import spacy
 
 import alibi.datasets as datasets
+import ruamel.yaml as yaml
 
 from alibi.explainers import AnchorTabular, AnchorText
 from alibi.utils.download import spacy_model
@@ -34,9 +34,11 @@ SUPPORTED_DATASETS = ['adult', 'imagenet', 'movie_sentiment']
 SUPPORTED_CLASSIFIERS = ['rf', 'lr']
 
 # TODO: Typing and documentation
-# TODO: Raise NotImplemented error if show_covered=True for Anchor Tabular
 # TODO: opts not used currently in preprocess_adult, pipelines hardcoded
-# TODO: in the future one should be able to pass their own classifier that's already fitted as opp to using fit_*
+# TODO: in the future one should be able to pass their own classifier object or object name and loading
+#  function as opp to using fit_*
+# TODO: make it more flexible for users to configure the name of their experiments from configuration file
+
 
 class Timer:
     def __init__(self):
@@ -48,6 +50,7 @@ class Timer:
 
     def __exit__(self, *args):
         self.t_elapsed = timer() - self.start
+
 
 def load_dataset(*, dataset='adult'):
 
@@ -74,7 +77,6 @@ def split_data(dataset, opts):
         return _train_test_val(dataset, seed, split_fractions)
 
 
-
 def _shuffle(dataset, n_train_records, seed):
 
     np.random.seed(seed)
@@ -91,6 +93,7 @@ def _shuffle(dataset, n_train_records, seed):
             'X_test': X_test,
             'Y_test': Y_test
             }
+
 
 def _train_test_val(dataset, seed, split_fractions, split_val=True):
 
@@ -158,9 +161,11 @@ def preprocess_movie_sentiment(dataset, splits, opts=None):
 
     return preprocessor
 
+
 def display_performance(splits, predictor):
     print('Train accuracy: ', accuracy_score(splits['Y_train'], predictor(splits['X_train'])))
     print('Test accuracy: ', accuracy_score(splits['Y_test'], predictor(splits['X_test'])))
+
 
 def predict_fcn(clf, preprocessor=None):
     if preprocessor:
@@ -245,6 +250,7 @@ def _tabular_prediction(predictor, instance, dataset):
     print('Alternative', alternative)
     return pred, alternative
 
+
 def _text_prediction(predictor, instance, dataset):
     class_names = dataset.target_names
     pred =  class_names[predictor([instance])[0]]
@@ -270,7 +276,6 @@ class ExplainerExperiment(object):
 
     def __init__(self, *, dataset, explainer, classifier, experiment):
 
-
         self.dataset_name = dataset
         self.explainer_config = explainer
         self.experiment_config = experiment
@@ -292,7 +297,6 @@ class ExplainerExperiment(object):
         self.explainer = None
         self.instance = None
         self.splits = None
-
 
     def __enter__(self):
 
@@ -391,6 +395,7 @@ def display(config, explanation, exp):
                             show_covered=config['experiment']['show_covered'])
     return
 
+
 def check(config):
 
     if config['explainer']['type'] not in SUPPORTED_EXPLAINERS:
@@ -407,6 +412,7 @@ def check(config):
                                           "not implemented for AnchorTabular. Please implement"
                                           "or set show_covered=False in experiment confinguration"
                                           "to continue.")
+
 
 def run_experiment(config):
 
@@ -441,6 +447,7 @@ def profile(config):
 
     display(config, explanation, exp)
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Anchor Explanations Experiments')
     parser.add_argument("--config",
@@ -457,7 +464,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     with open(args.config) as fp:
-        configuration = yaml.load(fp, Loader=yaml.FullLoader)
+        configuration = yaml.load(fp)
 
     configuration['experiment']['commit_hash'] = args.hash
 
