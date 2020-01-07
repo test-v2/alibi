@@ -8,3 +8,4 @@ class Predictor(object):
     def __call__(self, x):
         if self.preprocessor:
             return self.predict_fcn(self.preprocessor.transform(x))
+        return self.predict_fcn(x)
