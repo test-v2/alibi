@@ -462,13 +462,20 @@ def sum_categories(values: np.ndarray, start_idx: Sequence[int], enc_feat_dim: S
     if n_encoded_levels > values.shape[1]:
         raise ValueError("The sum of the encoded features dimensions exceeds data dimension!")
 
-    new_values = np.zeros((values.shape[0]), values.shape[1] - n_encoded_levels + len(enc_feat_dim))
+    new_values = np.zeros((values.shape[0], values.shape[1] - n_encoded_levels + len(enc_feat_dim)))
+    cat_cols = []
+    for start, feat_dim in zip(start_idx, enc_feat_dim):
+        for i in range(1, feat_dim):
+            cat_cols.append(start + i)
     enc_idx, new_vals_idx = 0, 0
     for idx in range(values.shape[1]):
         if idx in start_idx:
-            feat_dim = start_idx[enc_idx]
+            feat_dim = enc_feat_dim[enc_idx]
             enc_idx += 1
-            new_values[:, new_vals_idx] = np.sum(values[:, idx:idx + feat_dim], axis=1)
+            stop_idx = idx + feat_dim
+            new_values[:, new_vals_idx] = np.sum(values[:, idx:stop_idx], axis=1)
+        elif idx in cat_cols:
+            continue
         else:
             new_values[:, new_vals_idx] = values[:, idx]
         new_vals_idx += 1
